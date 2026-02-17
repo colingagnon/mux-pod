@@ -757,20 +757,21 @@ class SshClient {
       return await _withExecLock(() async {
         final session = await _client!.execute(resolvedCommand);
 
-        final stdout = StringBuffer();
-        final stderr = StringBuffer();
+        // バイト列として蓄積（チャンク単位デコードによるUTF-8境界分割を防止）
+        final stdoutBytes = <int>[];
+        final stderrBytes = <int>[];
 
         final stdoutCompleter = Completer<void>();
         final stderrCompleter = Completer<void>();
 
         session.stdout.listen(
-          (data) => stdout.write(utf8.decode(data)),
+          (data) => stdoutBytes.addAll(data),
           onDone: () => stdoutCompleter.complete(),
           onError: (e) => stdoutCompleter.completeError(e),
         );
 
         session.stderr.listen(
-          (data) => stderr.write(utf8.decode(data)),
+          (data) => stderrBytes.addAll(data),
           onDone: () => stderrCompleter.complete(),
           onError: (e) => stderrCompleter.completeError(e),
         );
@@ -791,8 +792,8 @@ class SshClient {
         session.close();
 
         return (
-          stdout: stdout.toString(),
-          stderr: stderr.toString(),
+          stdout: utf8.decode(stdoutBytes, allowMalformed: true),
+          stderr: utf8.decode(stderrBytes, allowMalformed: true),
           exitCode: exitCode,
         );
       });

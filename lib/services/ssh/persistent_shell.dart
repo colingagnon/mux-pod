@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/foundation.dart';
 
 /// 持続的シェルセッション
 ///
@@ -29,8 +29,8 @@ class PersistentShell {
   static const String _printfStartMarker = r'\x01###START_' '$_markerId' r'###\x01';
   static const String _printfEndMarker = r'\x01###END_' '$_markerId' r'###\x01';
 
-  /// 出力バッファ
-  final _outputBuffer = StringBuffer();
+  /// 出力バッファ（バイト列として蓄積し、UTF-8マルチバイト境界分割を防ぐ）
+  final _rawBuffer = <int>[];
 
   /// コマンド実行中のCompleter
   Completer<String>? _pendingCommand;
@@ -77,7 +77,7 @@ class PersistentShell {
     await Future.delayed(const Duration(milliseconds: 100));
 
     // バッファをクリア（初期化出力を破棄）
-    _outputBuffer.clear();
+    _rawBuffer.clear();
   }
 
   /// コマンドを実行して結果を取得
@@ -99,7 +99,7 @@ class PersistentShell {
     }
 
     _pendingCommand = Completer<String>();
-    _outputBuffer.clear();
+    _rawBuffer.clear();
 
     // printfでマーカーを出力（\x01バイトを含む）
     // echoではなくprintfを使用: シェルのエコーバック内ではリテラル'\x01'（4文字）が
@@ -127,10 +127,27 @@ class PersistentShell {
       return;
     }
 
-    final text = utf8.decode(data, allowMalformed: true);
-    _outputBuffer.write(text);
+    // デバッグ: UTF-8境界分割の検出（debugビルドのみ）
+    assert(() {
+      final chunkDecoded = utf8.decode(data, allowMalformed: true);
+      if (chunkDecoded.contains('\uFFFD')) {
+        final lastBytes = data.length > 6
+            ? data.sublist(data.length - 6)
+            : data;
+        debugPrint(
+          '[PersistentShell] UTF-8 boundary split detected!'
+          ' chunk_size=${data.length}'
+          ' last_bytes=${lastBytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}'
+        );
+      }
+      return true;
+    }());
 
-    final content = _outputBuffer.toString();
+    // バイト列として蓄積（チャンク単位デコードによるUTF-8境界分割を防止）
+    _rawBuffer.addAll(data);
+
+    // 蓄積したバイト列全体を一度にデコード
+    final content = utf8.decode(_rawBuffer, allowMalformed: true);
 
     // 開始マーカーと終了マーカーの両方が揃っているかチェック
     final startIndex = content.indexOf(_startMarker);
@@ -155,7 +172,7 @@ class PersistentShell {
 
       // Completerを先にnullにしてから完了（再入防止）
       _pendingCommand = null;
-      _outputBuffer.clear();
+      _rawBuffer.clear();
       pending.complete(result);
     }
   }
@@ -199,7 +216,7 @@ class PersistentShell {
     _session?.close();
     _session = null;
 
-    _outputBuffer.clear();
+    _rawBuffer.clear();
   }
 }
 
