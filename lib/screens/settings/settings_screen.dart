@@ -129,6 +129,15 @@ class SettingsScreen extends ConsumerWidget {
                     ref.read(settingsProvider.notifier).setKeepScreenOn(value);
                   },
                 ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.swipe),
+                  title: const Text('Invert Pane Navigation'),
+                  subtitle: const Text('Reverse swipe direction for pane switching'),
+                  value: settings.invertPaneNavigation,
+                  onChanged: (value) {
+                    ref.read(settingsProvider.notifier).setInvertPaneNavigation(value);
+                  },
+                ),
                 const Divider(),
                 const _SectionHeader(title: 'Appearance'),
                 ListTile(

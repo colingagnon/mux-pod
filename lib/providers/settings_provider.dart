@@ -20,6 +20,9 @@ class AppSettings {
   /// ターミナルカーソルの表示設定
   final bool showTerminalCursor;
 
+  /// ペインナビゲーション方向の反転
+  final bool invertPaneNavigation;
+
   const AppSettings({
     this.darkMode = true,
     this.fontSize = 14.0,
@@ -33,6 +36,7 @@ class AppSettings {
     this.autoFitEnabled = true,
     this.directInputEnabled = false,
     this.showTerminalCursor = true,
+    this.invertPaneNavigation = false,
   });
 
   AppSettings copyWith({
@@ -48,6 +52,7 @@ class AppSettings {
     bool? autoFitEnabled,
     bool? directInputEnabled,
     bool? showTerminalCursor,
+    bool? invertPaneNavigation,
   }) {
     return AppSettings(
       darkMode: darkMode ?? this.darkMode,
@@ -62,6 +67,7 @@ class AppSettings {
       autoFitEnabled: autoFitEnabled ?? this.autoFitEnabled,
       directInputEnabled: directInputEnabled ?? this.directInputEnabled,
       showTerminalCursor: showTerminalCursor ?? this.showTerminalCursor,
+      invertPaneNavigation: invertPaneNavigation ?? this.invertPaneNavigation,
     );
   }
 }
@@ -80,6 +86,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   static const String _autoFitEnabledKey = 'settings_auto_fit_enabled';
   static const String _directInputEnabledKey = 'settings_direct_input_enabled';
   static const String _showTerminalCursorKey = 'settings_show_terminal_cursor';
+  static const String _invertPaneNavKey = 'settings_invert_pane_nav';
 
   @override
   AppSettings build() {
@@ -103,6 +110,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       autoFitEnabled: prefs.getBool(_autoFitEnabledKey) ?? true,
       directInputEnabled: prefs.getBool(_directInputEnabledKey) ?? false,
       showTerminalCursor: prefs.getBool(_showTerminalCursorKey) ?? true,
+      invertPaneNavigation: prefs.getBool(_invertPaneNavKey) ?? false,
     );
   }
 
@@ -194,6 +202,12 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setShowTerminalCursor(bool value) async {
     state = state.copyWith(showTerminalCursor: value);
     await _saveSetting(_showTerminalCursorKey, value);
+  }
+
+  /// ペインナビゲーション方向の反転を設定
+  Future<void> setInvertPaneNavigation(bool value) async {
+    state = state.copyWith(invertPaneNavigation: value);
+    await _saveSetting(_invertPaneNavKey, value);
   }
 
   /// リロード

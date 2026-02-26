@@ -291,5 +291,29 @@ void main() {
         );
       });
     });
+
+    group('SwipeDirectionExtension.inverted', () {
+      test('upの反転はdown', () {
+        expect(SwipeDirection.up.inverted, SwipeDirection.down);
+      });
+
+      test('downの反転はup', () {
+        expect(SwipeDirection.down.inverted, SwipeDirection.up);
+      });
+
+      test('leftの反転はright', () {
+        expect(SwipeDirection.left.inverted, SwipeDirection.right);
+      });
+
+      test('rightの反転はleft', () {
+        expect(SwipeDirection.right.inverted, SwipeDirection.left);
+      });
+
+      test('二重反転で元に戻る', () {
+        for (final dir in SwipeDirection.values) {
+          expect(dir.inverted.inverted, dir);
+        }
+      });
+    });
   });
 }

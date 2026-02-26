@@ -5,6 +5,17 @@ import 'tmux_parser.dart';
 /// スワイプ方向
 enum SwipeDirection { up, down, left, right }
 
+/// SwipeDirectionの方向反転
+extension SwipeDirectionExtension on SwipeDirection {
+  /// 反転した方向を返す（up↔down, left↔right）
+  SwipeDirection get inverted => switch (this) {
+    SwipeDirection.up => SwipeDirection.down,
+    SwipeDirection.down => SwipeDirection.up,
+    SwipeDirection.left => SwipeDirection.right,
+    SwipeDirection.right => SwipeDirection.left,
+  };
+}
+
 /// ペイン間の空間ナビゲーション
 ///
 /// TmuxPaneのleft/top/width/heightフィールド（文字単位）を使用して

@@ -938,10 +938,16 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
     final activePane = tmuxState.activePane;
     if (window == null || activePane == null) return;
 
+    // 設定に応じてスワイプ方向を反転
+    final settings = ref.read(settingsProvider);
+    final actualDirection = settings.invertPaneNavigation
+        ? direction.inverted
+        : direction;
+
     final targetPane = PaneNavigator.findAdjacentPane(
       panes: window.panes,
       current: activePane,
-      direction: direction,
+      direction: actualDirection,
     );
 
     if (targetPane != null) {
@@ -955,10 +961,22 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
     final window = tmuxState.activeWindow;
     final activePane = tmuxState.activePane;
     if (window == null || activePane == null) return null;
-    return PaneNavigator.getNavigableDirections(
+
+    final rawDirections = PaneNavigator.getNavigableDirections(
       panes: window.panes,
       current: activePane,
     );
+
+    // 反転設定が有効な場合、方向キーを入れ替える
+    final settings = ref.read(settingsProvider);
+    if (settings.invertPaneNavigation) {
+      return {
+        for (final dir in SwipeDirection.values)
+          dir: rawDirections[dir.inverted] ?? false,
+      };
+    }
+
+    return rawDirections;
   }
 
   /// キーデータをtmux send-keysで送信
