@@ -72,8 +72,15 @@ class PersistentShell {
     // シェル初期化を待つ（プロンプトが出力されるまで少し待機）
     await Future.delayed(const Duration(milliseconds: 100));
 
-    // プロンプトを抑制し、エコーを無効化
-    _session!.write(utf8.encode('export PS1="" PS2=""; stty -echo\n'));
+    // ヒストリー記録を無効化（Bash/Zsh/fish対応）し、プロンプトを抑制
+    // - export HISTFILE=... : Bash/Zsh用（スタートアップファイル後に上書き）
+    // - set fish_history ... : fish用（exportはfishで構文エラーになるため別途）
+    // - 2>/dev/null で未対応シェルのエラーを抑制
+    _session!.write(utf8.encode(
+      'export HISTFILE=/dev/null HISTSIZE=0 HISTFILESIZE=0 SAVEHIST=0 2>/dev/null;'
+      ' set fish_history "" 2>/dev/null; true;'
+      ' export PS1="" PS2="" 2>/dev/null; stty -echo\n',
+    ));
     await Future.delayed(const Duration(milliseconds: 100));
 
     // バッファをクリア（初期化出力を破棄）
