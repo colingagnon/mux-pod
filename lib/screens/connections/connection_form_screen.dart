@@ -34,6 +34,7 @@ class _ConnectionFormScreenState extends ConsumerState<ConnectionFormScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _tmuxPathController = TextEditingController();
+  final _deepLinkIdController = TextEditingController();
 
   String _authMethod = 'password';
   String? _selectedKeyId;
@@ -59,6 +60,7 @@ class _ConnectionFormScreenState extends ConsumerState<ConnectionFormScreen> {
       _authMethod = connection.authMethod;
       _selectedKeyId = connection.keyId;
       _tmuxPathController.text = connection.tmuxPath ?? '';
+      _deepLinkIdController.text = connection.deepLinkId ?? '';
     }
   }
 
@@ -70,6 +72,7 @@ class _ConnectionFormScreenState extends ConsumerState<ConnectionFormScreen> {
     _usernameController.dispose();
     _passwordController.dispose();
     _tmuxPathController.dispose();
+    _deepLinkIdController.dispose();
     super.dispose();
   }
 
@@ -237,6 +240,21 @@ class _ConnectionFormScreenState extends ConsumerState<ConnectionFormScreen> {
               _buildFieldLabel('TMUX PATH (OPTIONAL)'),
               const SizedBox(height: 8),
               _buildTmuxPathInput(),
+              const SizedBox(height: 16),
+              // Deep Link ID
+              _buildFieldLabel('DEEP LINK ID (OPTIONAL)'),
+              const SizedBox(height: 4),
+              Text(
+                'Stable identifier for muxpod:// URLs',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 10,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? DesignColors.textMuted
+                      : DesignColors.textMutedLight,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildDeepLinkIdInput(),
             ],
           ),
         ),
@@ -510,6 +528,43 @@ class _ConnectionFormScreenState extends ConsumerState<ConnectionFormScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildDeepLinkIdInput() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final mutedColor = isDark ? DesignColors.textMuted : DesignColors.textMutedLight;
+    final inputColor = isDark ? DesignColors.inputDark : DesignColors.inputLight;
+    return TextFormField(
+      controller: _deepLinkIdController,
+      style: GoogleFonts.jetBrainsMono(fontSize: 14, color: colorScheme.onSurface),
+      decoration: InputDecoration(
+        hintText: 'e.g. macbook-pro',
+        hintStyle: GoogleFonts.jetBrainsMono(color: mutedColor.withValues(alpha: 0.5)),
+        prefixIcon: Icon(Icons.link, color: mutedColor, size: 20),
+        filled: true,
+        fillColor: inputColor,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: colorScheme.primary),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+      validator: (value) {
+        if (value != null && value.isNotEmpty && value.contains(' ')) {
+          return 'No spaces allowed (use hyphens or underscores)';
+        }
+        return null;
+      },
     );
   }
 
@@ -868,6 +923,7 @@ class _ConnectionFormScreenState extends ConsumerState<ConnectionFormScreen> {
       }
 
       final saveTmuxPath = _tmuxPathController.text.trim();
+      final saveDeepLinkId = _deepLinkIdController.text.trim();
       final connection = Connection(
         id: connectionId,
         name: _nameController.text.trim(),
@@ -877,6 +933,7 @@ class _ConnectionFormScreenState extends ConsumerState<ConnectionFormScreen> {
         authMethod: _authMethod,
         keyId: _authMethod == 'key' ? _selectedKeyId : null,
         tmuxPath: saveTmuxPath.isNotEmpty ? saveTmuxPath : null,
+        deepLinkId: saveDeepLinkId.isNotEmpty ? saveDeepLinkId : null,
         createdAt: widget.isEditing
             ? ref.read(connectionsProvider.notifier).getById(connectionId)?.createdAt ?? DateTime.now()
             : DateTime.now(),

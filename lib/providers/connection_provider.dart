@@ -17,6 +17,9 @@ class Connection {
   final DateTime createdAt;
   final DateTime? lastConnectedAt;
 
+  /// ディープリンク用の識別子（外部スクリプトと共有可能）
+  final String? deepLinkId;
+
   const Connection({
     required this.id,
     required this.name,
@@ -28,6 +31,7 @@ class Connection {
     this.tmuxPath,
     required this.createdAt,
     this.lastConnectedAt,
+    this.deepLinkId,
   });
 
   Connection copyWith({
@@ -41,6 +45,8 @@ class Connection {
     String? tmuxPath,
     DateTime? createdAt,
     DateTime? lastConnectedAt,
+    String? deepLinkId,
+    bool clearDeepLinkId = false,
   }) {
     return Connection(
       id: id ?? this.id,
@@ -53,6 +59,7 @@ class Connection {
       tmuxPath: tmuxPath ?? this.tmuxPath,
       createdAt: createdAt ?? this.createdAt,
       lastConnectedAt: lastConnectedAt ?? this.lastConnectedAt,
+      deepLinkId: clearDeepLinkId ? null : (deepLinkId ?? this.deepLinkId),
     );
   }
 
@@ -68,6 +75,7 @@ class Connection {
       'tmuxPath': tmuxPath,
       'createdAt': createdAt.toIso8601String(),
       'lastConnectedAt': lastConnectedAt?.toIso8601String(),
+      'deepLinkId': deepLinkId,
     };
   }
 
@@ -85,6 +93,7 @@ class Connection {
       lastConnectedAt: json['lastConnectedAt'] != null
           ? DateTime.parse(json['lastConnectedAt'] as String)
           : null,
+      deepLinkId: json['deepLinkId'] as String?,
     );
   }
 }
@@ -221,6 +230,30 @@ class ConnectionsNotifier extends Notifier<ConnectionsState> {
     }
   }
 
+  /// deepLinkIdまたは接続名でサーバーを検索
+  Connection? findByDeepLinkIdOrName(String serverIdentifier) {
+    // まずdeepLinkIdで完全一致
+    for (final c in state.connections) {
+      if (c.deepLinkId != null && c.deepLinkId == serverIdentifier) {
+        return c;
+      }
+    }
+    // 次に接続名で完全一致
+    for (final c in state.connections) {
+      if (c.name == serverIdentifier) {
+        return c;
+      }
+    }
+    // 最後に接続名で大文字小文字無視の一致
+    final lower = serverIdentifier.toLowerCase();
+    for (final c in state.connections) {
+      if (c.name.toLowerCase() == lower) {
+        return c;
+      }
+    }
+    return null;
+  }
+
   /// リロード
   Future<void> reload() async {
     state = state.copyWith(isLoading: true, error: null);
@@ -302,7 +335,8 @@ final filteredConnectionsProvider = Provider<List<Connection>>((ref) {
     connections = connections.where((c) {
       return c.name.toLowerCase().contains(searchQuery) ||
           c.host.toLowerCase().contains(searchQuery) ||
-          c.username.toLowerCase().contains(searchQuery);
+          c.username.toLowerCase().contains(searchQuery) ||
+          (c.deepLinkId?.toLowerCase().contains(searchQuery) ?? false);
     }).toList();
   }
 
