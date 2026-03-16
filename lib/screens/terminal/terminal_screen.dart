@@ -1582,6 +1582,33 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
     });
   }
 
+  /// ペインを分割
+  Future<void> _splitPane(String paneId, SplitDirection direction) async {
+    final sshClient = ref.read(sshProvider.notifier).client;
+    if (sshClient == null || !sshClient.isConnected) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('SSH connection is not available')),
+        );
+      }
+      return;
+    }
+
+    try {
+      final command = direction == SplitDirection.horizontal
+          ? TmuxCommands.splitWindowHorizontal(target: paneId)
+          : TmuxCommands.splitWindowVertical(target: paneId);
+      await sshClient.exec(command);
+      await _refreshSessionTree();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to split pane: $e')),
+        );
+      }
+    }
+  }
+
   /// ペイン選択ダイアログを表示
   void _showPaneSelector(TmuxState tmuxState) {
     final window = tmuxState.activeWindow;
@@ -1623,15 +1650,18 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
                 ),
                 Divider(height: 1, color: colorScheme.outline),
                 // ペインレイアウトのビジュアル表示
-                if (window.panes.length > 1)
-                  _PaneLayoutVisualizer(
-                    panes: window.panes,
-                    activePaneId: tmuxState.activePaneId,
-                    onPaneSelected: (paneId) {
-                      Navigator.pop(sheetContext);
-                      _selectPane(paneId);
-                    },
-                  ),
+                _PaneLayoutVisualizer(
+                  panes: window.panes,
+                  activePaneId: tmuxState.activePaneId,
+                  onPaneSelected: (paneId) {
+                    Navigator.pop(sheetContext);
+                    _selectPane(paneId);
+                  },
+                  onSplitRequested: (paneId, direction) {
+                    Navigator.pop(sheetContext);
+                    _splitPane(paneId, direction);
+                  },
+                ),
                 Divider(height: 1, color: colorScheme.outline),
                 // ペイン一覧
                 Flexible(
@@ -2420,25 +2450,35 @@ class _PaneLayoutPainter extends CustomPainter {
 /// ペインレイアウトをインタラクティブに表示するウィジェット
 ///
 /// 各ペインをタップで選択可能。ペイン番号も表示。
-class _PaneLayoutVisualizer extends StatelessWidget {
+class _PaneLayoutVisualizer extends StatefulWidget {
   final List<TmuxPane> panes;
   final String? activePaneId;
   final void Function(String paneId) onPaneSelected;
+  final void Function(String paneId, SplitDirection direction)? onSplitRequested;
 
   const _PaneLayoutVisualizer({
     required this.panes,
     this.activePaneId,
     required this.onPaneSelected,
+    this.onSplitRequested,
   });
 
   @override
+  State<_PaneLayoutVisualizer> createState() => _PaneLayoutVisualizerState();
+}
+
+class _PaneLayoutVisualizerState extends State<_PaneLayoutVisualizer> {
+  /// 分割モードが有効なペインID（nullなら通常表示）
+  String? _splitModeActivePaneId;
+
+  @override
   Widget build(BuildContext context) {
-    if (panes.isEmpty) return const SizedBox.shrink();
+    if (widget.panes.isEmpty) return const SizedBox.shrink();
 
     // ウィンドウ全体のサイズを計算（全ペインを含む範囲）
     int maxRight = 0;
     int maxBottom = 0;
-    for (final pane in panes) {
+    for (final pane in widget.panes) {
       final right = pane.left + pane.width;
       final bottom = pane.top + pane.height;
       if (right > maxRight) maxRight = right;
@@ -2465,8 +2505,9 @@ class _PaneLayoutVisualizer extends StatelessWidget {
             const gap = 2.0;
 
             return Stack(
-              children: panes.map((pane) {
-                final isActive = pane.id == activePaneId;
+              children: widget.panes.map((pane) {
+                final isActive = pane.id == widget.activePaneId;
+                final isSplitMode = _splitModeActivePaneId == pane.id;
 
                 // 実際の位置とサイズからRectを計算
                 final left = pane.left * scaleX;
@@ -2480,7 +2521,7 @@ class _PaneLayoutVisualizer extends StatelessWidget {
                   width: width,
                   height: height,
                   child: GestureDetector(
-                    onTap: () => onPaneSelected(pane.id),
+                    onTap: () => _handlePaneTap(pane, isActive, width, height),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       decoration: BoxDecoration(
@@ -2496,30 +2537,12 @@ class _PaneLayoutVisualizer extends StatelessWidget {
                         ),
                       ),
                       child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              '${pane.index}',
-                              style: GoogleFonts.jetBrainsMono(
-                                fontSize: width > 60 ? 18 : 14,
-                                fontWeight: FontWeight.w700,
-                                color: isActive
-                                    ? DesignColors.primary
-                                    : Colors.white.withValues(alpha: 0.7),
-                              ),
-                            ),
-                            if (width > 80 && height > 50) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                '${pane.width}x${pane.height}',
-                                style: GoogleFonts.jetBrainsMono(
-                                  fontSize: 9,
-                                  color: Colors.white.withValues(alpha: 0.5),
-                                ),
-                              ),
-                            ],
-                          ],
+                        child: _buildPaneContent(
+                          pane: pane,
+                          isActive: isActive,
+                          isSplitMode: isSplitMode,
+                          width: width,
+                          height: height,
                         ),
                       ),
                     ),
@@ -2532,6 +2555,287 @@ class _PaneLayoutVisualizer extends StatelessWidget {
       ),
     );
   }
+
+  /// インライン分割アイコンが収まる最小サイズ
+  static const _minInlineWidth = 80.0;
+  static const _minInlineHeight = 60.0;
+
+  void _handlePaneTap(TmuxPane pane, bool isActive, double width, double height) {
+    if (isActive && widget.onSplitRequested != null) {
+      if (width < _minInlineWidth || height < _minInlineHeight) {
+        // 小さいペイン → モーダルダイアログで分割方向を選択
+        _showSplitDialog(pane);
+      } else {
+        // 大きいペイン → インラインで分割モード切り替え
+        setState(() {
+          _splitModeActivePaneId =
+              _splitModeActivePaneId == pane.id ? null : pane.id;
+        });
+      }
+    } else {
+      // 非アクティブペインをタップ → ペイン選択
+      widget.onPaneSelected(pane.id);
+    }
+  }
+
+  void _showSplitDialog(TmuxPane pane) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        final colorScheme = Theme.of(dialogContext).colorScheme;
+        return AlertDialog(
+          title: Text(
+            'Split Pane ${pane.index}',
+            style: GoogleFonts.spaceGrotesk(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: CustomPaint(
+                  size: const Size(24, 24),
+                  painter: _SplitRightIconPainter(color: colorScheme.primary),
+                ),
+                title: const Text('Split Right'),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                onTap: () {
+                  Navigator.pop(dialogContext);
+                  widget.onSplitRequested!(pane.id, SplitDirection.horizontal);
+                },
+              ),
+              ListTile(
+                leading: CustomPaint(
+                  size: const Size(24, 24),
+                  painter: _SplitDownIconPainter(color: colorScheme.primary),
+                ),
+                title: const Text('Split Down'),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                onTap: () {
+                  Navigator.pop(dialogContext);
+                  widget.onSplitRequested!(pane.id, SplitDirection.vertical);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPaneContent({
+    required TmuxPane pane,
+    required bool isActive,
+    required bool isSplitMode,
+    required double width,
+    required double height,
+  }) {
+    if (isActive && isSplitMode) {
+      // 分割モード: アイコンボタン表示
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            '${pane.index}',
+            style: GoogleFonts.jetBrainsMono(
+              fontSize: width > 60 ? 18 : 14,
+              fontWeight: FontWeight.w700,
+              color: DesignColors.primary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildSplitButton(
+                painter: _SplitRightIconPainter(color: DesignColors.primary),
+                onTap: () => widget.onSplitRequested!(
+                  pane.id,
+                  SplitDirection.horizontal,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _buildSplitButton(
+                painter: _SplitDownIconPainter(color: DesignColors.primary),
+                onTap: () => widget.onSplitRequested!(
+                  pane.id,
+                  SplitDirection.vertical,
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    // 通常表示
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          '${pane.index}',
+          style: GoogleFonts.jetBrainsMono(
+            fontSize: width > 60 ? 18 : 14,
+            fontWeight: FontWeight.w700,
+            color: isActive
+                ? DesignColors.primary
+                : Colors.white.withValues(alpha: 0.7),
+          ),
+        ),
+        if (isActive && widget.onSplitRequested != null && width > 60 && height > 40) ...[
+          const SizedBox(height: 2),
+          Text(
+            'Tap to split',
+            style: GoogleFonts.jetBrainsMono(
+              fontSize: 8,
+              color: DesignColors.primary.withValues(alpha: 0.7),
+            ),
+          ),
+        ] else if (width > 80 && height > 50) ...[
+          const SizedBox(height: 2),
+          Text(
+            '${pane.width}x${pane.height}',
+            style: GoogleFonts.jetBrainsMono(
+              fontSize: 9,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSplitButton({
+    required CustomPainter painter,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: DesignColors.primary.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: DesignColors.primary.withValues(alpha: 0.4),
+            ),
+          ),
+          child: CustomPaint(
+            size: const Size(20, 20),
+            painter: painter,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 右分割アイコン: 左に既存ペイン、右に新ペイン（+マーク付き）
+class _SplitRightIconPainter extends CustomPainter {
+  final Color color;
+
+  _SplitRightIconPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    final w = size.width;
+    final h = size.height;
+    final pad = w * 0.1;
+    final mid = w * 0.5;
+
+    // 外枠
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(pad, pad, w - pad * 2, h - pad * 2),
+        const Radius.circular(2),
+      ),
+      paint,
+    );
+
+    // 分割線（中央縦線）
+    canvas.drawLine(Offset(mid, pad), Offset(mid, h - pad), paint);
+
+    // 右側に+マーク
+    final plusPaint = Paint()
+      ..color = color
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round;
+    final cx = mid + (w - pad - mid) / 2;
+    final cy = h / 2;
+    final plusSize = w * 0.12;
+    canvas.drawLine(Offset(cx - plusSize, cy), Offset(cx + plusSize, cy), plusPaint);
+    canvas.drawLine(Offset(cx, cy - plusSize), Offset(cx, cy + plusSize), plusPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SplitRightIconPainter oldDelegate) =>
+      color != oldDelegate.color;
+}
+
+/// 下分割アイコン: 上に既存ペイン、下に新ペイン（+マーク付き）
+class _SplitDownIconPainter extends CustomPainter {
+  final Color color;
+
+  _SplitDownIconPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    final w = size.width;
+    final h = size.height;
+    final pad = w * 0.1;
+    final mid = h * 0.5;
+
+    // 外枠
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(pad, pad, w - pad * 2, h - pad * 2),
+        const Radius.circular(2),
+      ),
+      paint,
+    );
+
+    // 分割線（中央横線）
+    canvas.drawLine(Offset(pad, mid), Offset(w - pad, mid), paint);
+
+    // 下側に+マーク
+    final plusPaint = Paint()
+      ..color = color
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round;
+    final cx = w / 2;
+    final cy = mid + (h - pad - mid) / 2;
+    final plusSize = w * 0.12;
+    canvas.drawLine(Offset(cx - plusSize, cy), Offset(cx + plusSize, cy), plusPaint);
+    canvas.drawLine(Offset(cx, cy - plusSize), Offset(cx, cy + plusSize), plusPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SplitDownIconPainter oldDelegate) =>
+      color != oldDelegate.color;
 }
 
 /// 入力ダイアログのコンテンツ（複数行対応、Shift+Enterで改行）
