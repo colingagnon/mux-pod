@@ -24,6 +24,9 @@ class SpecialKeysBar extends StatefulWidget {
   /// DirectInputモードのトグルコールバック
   final VoidCallback? onDirectInputToggle;
 
+  /// 画像転送ボタンが押された時のコールバック
+  final VoidCallback? onImagePickRequested;
+
   const SpecialKeysBar({
     super.key,
     required this.onKeyPressed,
@@ -32,6 +35,7 @@ class SpecialKeysBar extends StatefulWidget {
     this.hapticFeedback = true,
     this.directInputEnabled = false,
     this.onDirectInputToggle,
+    this.onImagePickRequested,
   });
 
   @override
@@ -558,6 +562,11 @@ class _SpecialKeysBarState extends State<SpecialKeysBar> {
           const SizedBox(width: 2),
           _buildArrowButton(Icons.arrow_right, 'Right'),
           const SizedBox(width: 8),
+          // 画像転送ボタン
+          if (widget.onImagePickRequested != null) ...[
+            _buildImageTransferButton(),
+            const SizedBox(width: 2),
+          ],
           // DirectInputモードトグルボタン
           _buildDirectInputToggle(),
           // DirectInput有効時: 数字キー(1-4)を右寄せで表示
@@ -861,6 +870,34 @@ class _SpecialKeysBarState extends State<SpecialKeysBar> {
         ),
         child: Icon(
           icon,
+          size: 16,
+          color: colorScheme.onSurface,
+        ),
+      ),
+    );
+  }
+
+  /// 画像転送ボタン
+  Widget _buildImageTransferButton() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTapDown: (_) {
+        if (widget.hapticFeedback) {
+          HapticFeedback.lightImpact();
+        }
+      },
+      onTap: widget.onImagePickRequested,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: isDark ? DesignColors.keyBackground : DesignColors.keyBackgroundLight,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: colorScheme.outline.withValues(alpha: 0.2)),
+        ),
+        child: Icon(
+          Icons.image_outlined,
           size: 16,
           color: colorScheme.onSurface,
         ),
