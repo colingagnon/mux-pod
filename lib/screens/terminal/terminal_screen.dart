@@ -22,8 +22,11 @@ import '../../services/tmux/tmux_parser.dart';
 import '../../theme/design_colors.dart';
 import '../../widgets/scroll_to_bottom_button.dart';
 import '../../widgets/special_keys_bar.dart';
+import '../../widgets/image_transfer_confirm_dialog.dart';
 import '../../widgets/tmux_tiles.dart';
 import '../../providers/terminal_display_provider.dart';
+import '../../providers/image_transfer_provider.dart';
+import 'package:image_picker/image_picker.dart';
 import '../settings/settings_screen.dart';
 import 'widgets/ansi_text_view.dart';
 
@@ -852,6 +855,8 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
     _settingsSubscription = null;
     _networkSubscription?.close();
     _networkSubscription = null;
+    _imageTransferSub?.close();
+    _imageTransferSub = null;
     // タイマーを停止
     _pollTimer?.cancel();
     _pollTimer = null;
@@ -968,6 +973,20 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
                   ),
                 ),
               ),
+              // 画像アップロード進捗バー
+              Consumer(
+                builder: (context, ref, _) {
+                  final transfer = ref.watch(imageTransferProvider);
+                  final isActive = transfer.phase == ImageTransferPhase.uploading ||
+                      transfer.phase == ImageTransferPhase.converting;
+                  if (!isActive) return const SizedBox.shrink();
+                  return LinearProgressIndicator(
+                    value: transfer.uploadProgress > 0 ? transfer.uploadProgress : null,
+                    minHeight: 3,
+                    backgroundColor: Colors.transparent,
+                  );
+                },
+              ),
               SpecialKeysBar(
                 onKeyPressed: _sendKey,
                 onSpecialKeyPressed: _sendSpecialKey,
@@ -976,6 +995,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
                 onDirectInputToggle: () {
                   ref.read(settingsProvider.notifier).toggleDirectInput();
                 },
+                onImagePickRequested: _handleImageTransfer,
               ),
             ],
           ),
@@ -2587,6 +2607,130 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
     } catch (_) {
       // キー送信エラーは静かに無視（ポーリングで状態は更新される）
     }
+  }
+
+  ProviderSubscription? _imageTransferSub;
+
+  /// 画像転送の状態リスナーを初期化（1回のみ）
+  void _ensureImageTransferListener() {
+    if (_imageTransferSub != null) return;
+    _imageTransferSub = ref.listenManual(imageTransferProvider, (prev, next) async {
+
+      if (next.phase == ImageTransferPhase.confirming &&
+          next.pickedImageBytes != null &&
+          next.pendingRemotePath != null &&
+          (prev?.phase == ImageTransferPhase.picking)) {
+        if (!mounted) return;
+        final settings = ref.read(settingsProvider);
+        final options = await ImageTransferConfirmDialog.show(
+          context,
+          remotePath: next.pendingRemotePath!,
+          imageBytes: next.pickedImageBytes!,
+          imageName: next.pickedImageName,
+          settings: settings,
+        );
+
+        if (options != null) {
+          final uploadedPath = await ref
+              .read(imageTransferProvider.notifier)
+              .confirmAndUpload(options: options);
+
+          if (uploadedPath != null && mounted) {
+            await _injectImagePath(uploadedPath, options);
+          }
+        } else {
+          ref.read(imageTransferProvider.notifier).cancel();
+        }
+      }
+
+      if (next.phase == ImageTransferPhase.error && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(next.errorMessage ?? 'Image transfer failed'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+
+      if (next.phase == ImageTransferPhase.completed &&
+          next.lastUploadedPath != null &&
+          mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Uploaded: ${next.lastUploadedPath}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    });
+  }
+
+  /// 画像転送フローを開始
+  void _handleImageTransfer() {
+    _ensureImageTransferListener();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Gallery'),
+              onTap: () {
+                Navigator.pop(ctx);
+                ref.read(imageTransferProvider.notifier).pickImage(
+                      ImageSource.gallery,
+                    );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Camera'),
+              onTap: () {
+                Navigator.pop(ctx);
+                ref.read(imageTransferProvider.notifier).pickImage(
+                      ImageSource.camera,
+                    );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// アップロード済み画像のパスをターミナルに注入
+  Future<void> _injectImagePath(String remotePath, ImageTransferOptions options) async {
+    final sshClient = ref.read(sshProvider.notifier).client;
+    if (sshClient == null || !sshClient.isConnected) return;
+
+    final activePaneId = ref.read(tmuxProvider).activePaneId;
+    if (activePaneId == null) return;
+
+    // パスフォーマット適用（optionsから取得）
+    final formattedPath = options.pathFormat.replaceAll('{path}', remotePath);
+
+    if (options.bracketedPaste) {
+      sshClient.write('\x1b[200~$formattedPath\x1b[201~');
+    } else {
+      await sshClient.exec(
+        TmuxCommands.sendKeys(activePaneId, formattedPath, literal: true),
+      );
+    }
+
+    if (options.autoEnter) {
+      await sshClient.exec(
+        TmuxCommands.sendKeys(activePaneId, 'Enter'),
+      );
+    }
+
+    _boostPolling();
   }
 
   void _showInputDialog() {

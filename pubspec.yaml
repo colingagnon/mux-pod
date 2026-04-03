@@ -46,6 +46,9 @@ dependencies:
   cryptography: ^2.7.0
   pointycastle: ^3.9.1
   crypto: ^3.0.3
+  # Image transfer
+  image_picker: ^1.1.2
+  image: ^4.5.3
   # Settings/notifications
   url_launcher: ^6.3.2
   # Background SSH connection maintenance

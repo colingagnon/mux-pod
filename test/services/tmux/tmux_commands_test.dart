@@ -156,4 +156,31 @@ void main() {
       expect(TmuxLayout.tiled.name, 'tiled');
     });
   });
+
+  group('Image path injection via sendKeys', () {
+    test('sends simple path with literal flag', () {
+      final cmd = TmuxCommands.sendKeys('%0', '/tmp/muxpod/img_20260403_a3f2.png', literal: true);
+      expect(cmd, contains('-l'));
+      expect(cmd, contains('/tmp/muxpod/img_20260403_a3f2.png'));
+    });
+
+    test('handles path with safe characters only', () {
+      final cmd = TmuxCommands.sendKeys('%42', '/tmp/muxpod/test_image-v2.0.jpg', literal: true);
+      expect(cmd, contains('-l'));
+      expect(cmd, contains('test_image-v2.0.jpg'));
+    });
+
+    test('sends Enter key after path for auto-enter', () {
+      final cmd = TmuxCommands.sendKeys('%0', 'Enter');
+      expect(cmd, contains('Enter'));
+      expect(cmd, isNot(contains('-l')));
+    });
+
+    test('formats @-prefixed path correctly', () {
+      const path = '@/tmp/muxpod/img_test.png';
+      final cmd = TmuxCommands.sendKeys('%0', path, literal: true);
+      expect(cmd, contains('-l'));
+      expect(cmd, contains('@/tmp/muxpod/img_test.png'));
+    });
+  });
 }

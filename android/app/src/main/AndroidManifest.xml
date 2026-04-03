@@ -2,6 +2,11 @@
     <!-- Network permission for SSH connection -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- Camera and photo library permissions for image transfer -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+
     <!-- Foreground Service permissions for SSH connection maintenance -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />

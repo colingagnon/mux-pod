@@ -61,6 +61,8 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>SSH接続情報への安全なアクセスのためにFace IDを使用します</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>SSH鍵ファイルのインポートに使用します</string>
+	<string>画像をリモートサーバーに転送するためにフォトライブラリを使用します</string>
+	<key>NSCameraUsageDescription</key>
+	<string>撮影した画像をリモートサーバーに転送するためにカメラを使用します</string>
 </dict>
 </plist>
