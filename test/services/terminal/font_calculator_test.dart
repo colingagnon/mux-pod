@@ -435,6 +435,48 @@ void main() {
       });
     });
 
+    group('calculateMaxCols', () {
+      test('画面幅からカラム数を計算する', () {
+        final result = FontCalculator.calculateMaxCols(
+          screenWidth: 800,
+          fontSize: 14,
+          fontFamily: 'JetBrains Mono',
+        );
+        expect(result, greaterThan(0));
+        expect(result, lessThanOrEqualTo(999));
+      });
+
+      test('最小値10にクランプされる', () {
+        final result = FontCalculator.calculateMaxCols(
+          screenWidth: 10,
+          fontSize: 100,
+          fontFamily: 'JetBrains Mono',
+        );
+        expect(result, greaterThanOrEqualTo(10));
+      });
+    });
+
+    group('calculateMaxRows', () {
+      test('画面高さから行数を計算する', () {
+        final result = FontCalculator.calculateMaxRows(
+          screenHeight: 600,
+          fontSize: 14,
+          fontFamily: 'JetBrains Mono',
+        );
+        expect(result, greaterThan(0));
+        expect(result, lessThanOrEqualTo(999));
+      });
+
+      test('最小値5にクランプされる', () {
+        final result = FontCalculator.calculateMaxRows(
+          screenHeight: 10,
+          fontSize: 100,
+          fontFamily: 'JetBrains Mono',
+        );
+        expect(result, greaterThanOrEqualTo(5));
+      });
+    });
+
     group('getCharDisplayWidthWithContext', () {
       test('returns 2 for emoji-eligible character followed by VS16', () {
         // ✡ (U+2721) followed by VS16 should be width 2

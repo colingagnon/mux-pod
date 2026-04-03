@@ -400,6 +400,30 @@ class FontCalculator {
     return 1;
   }
 
+  /// 指定フォントサイズで画面幅に収まる最大カラム数を計算
+  static int calculateMaxCols({
+    required double screenWidth,
+    required double fontSize,
+    required String fontFamily,
+  }) {
+    final charWidthRatio = measureCharWidthRatio(fontFamily);
+    final charWidth = charWidthRatio * fontSize;
+    if (charWidth <= 0) return 80;
+    return (screenWidth / charWidth).floor().clamp(10, 999);
+  }
+
+  /// 指定フォントサイズで画面高さに収まる最大行数を計算
+  static int calculateMaxRows({
+    required double screenHeight,
+    required double fontSize,
+    required String fontFamily,
+    double lineHeightRatio = 1.2,
+  }) {
+    final lineHeight = fontSize * lineHeightRatio;
+    if (lineHeight <= 0) return 24;
+    return (screenHeight / lineHeight).floor().clamp(5, 999);
+  }
+
   /// テキストのターミナル表示幅（カラム数）を計算
   ///
   /// 異体字セレクタ（VS16等）を考慮した正確な幅計算を行う。

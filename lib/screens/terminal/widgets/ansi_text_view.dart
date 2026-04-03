@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/settings_provider.dart';
+import '../../../providers/terminal_display_provider.dart';
 import '../../../services/terminal/ansi_parser.dart';
 import '../../../services/terminal/font_calculator.dart';
 import '../../../services/terminal/terminal_diff.dart';
@@ -705,6 +706,22 @@ class AnsiTextViewState extends ConsumerState<AnsiTextView>
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        // スクリーンサイズをTerminalDisplayProviderに通知（リサイズダイアログ用）
+        // build中のprovider変更は禁止のためフレーム後に実行
+        // 値が変わった時のみ更新（無限ループ防止）
+        final currentDisplay = ref.read(terminalDisplayProvider);
+        if (currentDisplay.screenWidth != constraints.maxWidth ||
+            currentDisplay.screenHeight != constraints.maxHeight) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              ref.read(terminalDisplayProvider.notifier).updateScreenSize(
+                    constraints.maxWidth,
+                    constraints.maxHeight,
+                  );
+            }
+          });
+        }
+
         // フォントサイズを決定
         late final double fontSize;
         late final bool needsHorizontalScroll;
