@@ -172,6 +172,17 @@ class SshClient {
   /// 最後のエラーメッセージ
   String? get lastError => _lastError;
 
+  /// SFTPクライアントを取得
+  ///
+  /// 接続済みの場合のみSFTPセッションを開始して返す。
+  /// 使用後は呼び出し側で close() すること。
+  Future<SftpClient> openSftp() async {
+    if (!isConnected || _client == null) {
+      throw SshConnectionError('SFTP requires an active SSH connection');
+    }
+    return await _client!.sftp();
+  }
+
   /// SSH接続を確立する
   ///
   /// [host] ホスト名またはIPアドレス
