@@ -22,6 +22,7 @@ import '../../services/tmux/tmux_parser.dart';
 import '../../theme/design_colors.dart';
 import '../../widgets/scroll_to_bottom_button.dart';
 import '../../widgets/special_keys_bar.dart';
+import '../../widgets/tmux_tiles.dart';
 import '../../providers/terminal_display_provider.dart';
 import '../settings/settings_screen.dart';
 import 'widgets/ansi_text_view.dart';
@@ -1459,25 +1460,9 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
                     itemBuilder: (context, index) {
                       final session = tmuxState.sessions[index];
                       final isActive = session.name == tmuxState.activeSessionName;
-                      return ListTile(
-                        leading: Icon(
-                          Icons.folder,
-                          color: isActive ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.6),
-                        ),
-                        title: Text(
-                          session.name,
-                          style: TextStyle(
-                            color: isActive ? colorScheme.primary : colorScheme.onSurface,
-                            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                          ),
-                        ),
-                        subtitle: Text(
-                          '${session.windowCount} windows',
-                          style: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.38)),
-                        ),
-                        trailing: isActive
-                            ? Icon(Icons.check, color: colorScheme.primary)
-                            : null,
+                      return TmuxSessionTile(
+                        session: session,
+                        isActive: isActive,
                         onTap: () {
                           Navigator.pop(context);
                           _selectSession(session.name);
@@ -1544,28 +1529,21 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
                     itemBuilder: (context, index) {
                       final window = session.windows[index];
                       final isActive = window.index == tmuxState.activeWindowIndex;
-                      return ListTile(
-                        leading: Icon(
-                          Icons.tab,
-                          color: isActive ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.6),
-                        ),
-                        title: Text(
-                          '${window.index}: ${window.name}',
-                          style: TextStyle(
-                            color: isActive ? colorScheme.primary : colorScheme.onSurface,
-                            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                          ),
-                        ),
-                        subtitle: Text(
-                          '${window.paneCount} panes',
-                          style: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.38)),
-                        ),
-                        trailing: isActive
-                            ? Icon(Icons.check, color: colorScheme.primary)
-                            : null,
+                      return TmuxWindowTile(
+                        window: window,
+                        isActive: isActive,
                         onTap: () {
                           Navigator.pop(context);
                           _selectWindow(session.name, window.index);
+                        },
+                        onClose: () {
+                          Navigator.pop(context);
+                          _confirmAndKillWindow(
+                            sessionName: session.name,
+                            windowIndex: window.index,
+                            windowName: window.name,
+                            isLastWindow: session.windows.length == 1,
+                          );
                         },
                       );
                     },
@@ -2000,6 +1978,112 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
     ).then((_) {
       _scrollToBottomKey.currentState?.show();
     });
+  }
+
+  /// ウィンドウ閉じる確認ダイアログを表示
+  void _confirmAndKillWindow({
+    required String sessionName,
+    required int windowIndex,
+    required String windowName,
+    required bool isLastWindow,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: isDark ? DesignColors.surfaceDark : DesignColors.surfaceLight,
+          title: Text(
+            'Close Window?',
+            style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+          ),
+          content: Text(
+            isLastWindow
+                ? 'This is the last window in the session. Closing it will end the session and disconnect from the server.'
+                : 'Are you sure you want to close window "$windowName"?',
+            style: TextStyle(color: isDark ? Colors.white70 : Colors.black54),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(
+                'Cancel',
+                style: TextStyle(color: isDark ? Colors.white60 : Colors.black54),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                final wasActive = windowIndex == ref.read(tmuxProvider).activeWindowIndex;
+                _killWindow(
+                  sessionName: sessionName,
+                  windowIndex: windowIndex,
+                  wasActiveWindow: wasActive,
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: DesignColors.error,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// ウィンドウを閉じる
+  Future<void> _killWindow({
+    required String sessionName,
+    required int windowIndex,
+    required bool wasActiveWindow,
+  }) async {
+    final sshClient = ref.read(sshProvider.notifier).client;
+    if (sshClient == null || !sshClient.isConnected) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('SSH connection is not available')),
+        );
+      }
+      return;
+    }
+
+    try {
+      debugPrint('[Terminal] Killing window: $sessionName:$windowIndex');
+      await sshClient.exec(TmuxCommands.killWindow(sessionName, windowIndex));
+      await _refreshSessionTree();
+
+      if (!mounted || _isDisposed) return;
+
+      // セッション消滅判定: list-sessionsで直接確認
+      final sessionsOutput = await sshClient.exec('tmux list-sessions 2>/dev/null || true');
+      if (sessionsOutput.trim().isEmpty) {
+        debugPrint('[Terminal] Last window closed, session terminated. Disconnecting...');
+        await _disconnect();
+        return;
+      }
+
+      // アクティブウィンドウを閉じた場合、tmuxが自動選択した新ウィンドウに同期
+      if (wasActiveWindow) {
+        final newTmuxState = ref.read(tmuxProvider);
+        final newSession = newTmuxState.activeSession;
+        if (newSession != null) {
+          final newActiveWindow = newSession.windows.where((w) => w.active).firstOrNull
+              ?? newSession.windows.firstOrNull;
+          if (newActiveWindow != null) {
+            await _selectWindow(newSession.name, newActiveWindow.index);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[Terminal] Failed to kill window: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to close window: $e')),
+        );
+      }
+    }
   }
 
   /// 切断確認ダイアログを表示
