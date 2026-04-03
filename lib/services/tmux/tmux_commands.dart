@@ -348,6 +348,15 @@ class TmuxCommands {
   }
 }
 
+/// ペイン分割方向
+enum SplitDirection {
+  /// 右に分割（左右に並べる） - tmux split-window -h
+  horizontal,
+
+  /// 下に分割（上下に並べる） - tmux split-window -v
+  vertical,
+}
+
 /// tmuxレイアウト
 enum TmuxLayout {
   /// 均等に水平分割
