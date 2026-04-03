@@ -1459,29 +1459,35 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
                     itemBuilder: (context, index) {
                       final session = tmuxState.sessions[index];
                       final isActive = session.name == tmuxState.activeSessionName;
-                      return ListTile(
-                        leading: Icon(
-                          Icons.folder,
-                          color: isActive ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.6),
-                        ),
-                        title: Text(
-                          session.name,
-                          style: TextStyle(
-                            color: isActive ? colorScheme.primary : colorScheme.onSurface,
-                            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                          ),
-                        ),
-                        subtitle: Text(
-                          '${session.windowCount} windows',
-                          style: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.38)),
-                        ),
-                        trailing: isActive
-                            ? Icon(Icons.check, color: colorScheme.primary)
+                      return Container(
+                        decoration: isActive
+                            ? BoxDecoration(
+                                border: Border(
+                                  left: BorderSide(color: colorScheme.primary, width: 3),
+                                ),
+                              )
                             : null,
-                        onTap: () {
-                          Navigator.pop(context);
-                          _selectSession(session.name);
-                        },
+                        child: ListTile(
+                          leading: Icon(
+                            Icons.folder,
+                            color: isActive ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.6),
+                          ),
+                          title: Text(
+                            session.name,
+                            style: TextStyle(
+                              color: isActive ? colorScheme.primary : colorScheme.onSurface,
+                              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${session.windowCount} windows',
+                            style: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.38)),
+                          ),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _selectSession(session.name);
+                          },
+                        ),
                       );
                     },
                   ),
