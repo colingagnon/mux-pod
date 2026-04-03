@@ -19,6 +19,8 @@ import '../../services/ssh/ssh_client.dart' show SshConnectOptions;
 import '../../services/tmux/pane_navigator.dart';
 import '../../services/tmux/tmux_commands.dart';
 import '../../services/tmux/tmux_parser.dart';
+import '../../services/tmux/tmux_version.dart';
+import '../../widgets/dialogs/resize_dialog.dart';
 import '../../theme/design_colors.dart';
 import '../../widgets/scroll_to_bottom_button.dart';
 import '../../widgets/special_keys_bar.dart';
@@ -168,6 +170,12 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
 
   // ウィンドウ作成中フラグ（連打防止）
   bool _isCreatingWindow = false;
+
+  // リサイズ中フラグ（排他制御）
+  bool _isResizing = false;
+
+  // tmuxバージョン情報（リサイズ機能判定用）
+  TmuxVersionInfo? _tmuxVersion;
 
   // Riverpodリスナー
   ProviderSubscription<SshState>? _sshSubscription;
@@ -364,7 +372,17 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
         return;
       }
 
-      // 4. セッションツリー全体を取得
+      // 3.5. tmuxバー��ョン取得（リサイズ機能判定用）
+      try {
+        final versionOutput = await sshNotifier.client?.exec(TmuxCommands.version());
+        if (versionOutput != null) {
+          _tmuxVersion = TmuxVersionInfo.parse(versionOutput);
+        }
+      } catch (_) {
+        _tmuxVersion = null;
+      }
+
+      // 4. セ���ションツリー全体を取得
       await _refreshSessionTree();
       if (!mounted || _isDisposed) {
         return;
@@ -1523,6 +1541,16 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
                       ),
                       const Spacer(),
                       IconButton(
+                        icon: Icon(Icons.open_in_full, color: colorScheme.primary),
+                        tooltip: 'Resize Window',
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          Future.delayed(const Duration(milliseconds: 200), () {
+                            if (mounted) _showResizeWindowChooser(tmuxState);
+                          });
+                        },
+                      ),
+                      IconButton(
                         icon: Icon(Icons.add, color: colorScheme.primary),
                         tooltip: 'New Window',
                         onPressed: () {
@@ -1549,6 +1577,10 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
                         onTap: () {
                           Navigator.pop(context);
                           _selectWindow(session.name, window.index);
+                        },
+                        onResize: () {
+                          Navigator.pop(context);
+                          _handleResizeWindow(window);
                         },
                         onClose: () {
                           Navigator.pop(context);
@@ -1745,6 +1777,167 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
     );
   }
 
+  /// リサイズ対象のペインをグラフィカルに選択するダイアログ
+  void _showResizePaneChooser(TmuxState tmuxState) {
+    final window = tmuxState.activeWindow;
+    if (window == null || window.panes.isEmpty) return;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return _ResizePaneChooserDialog(
+          panes: window.panes,
+          activePaneId: tmuxState.activePaneId,
+          onResize: (selectedPane) {
+            Navigator.pop(dialogContext);
+            _handleResizePane(selectedPane);
+          },
+        );
+      },
+    );
+  }
+
+  /// リサイズ対象のウィンドウをグラフィカルに選択するダイアログ
+  void _showResizeWindowChooser(TmuxState tmuxState) {
+    final session = tmuxState.activeSession;
+    if (session == null || session.windows.isEmpty) return;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return _ResizeWindowChooserDialog(
+          windows: session.windows,
+          activeWindowIndex: tmuxState.activeWindowIndex,
+          onResize: (selectedWindow) {
+            Navigator.pop(dialogContext);
+            _handleResizeWindow(selectedWindow);
+          },
+        );
+      },
+    );
+  }
+
+  /// ペインをリサイズ
+  Future<void> _handleResizePane(TmuxPane pane) async {
+    if (_isResizing) return;
+
+    final displayState = ref.read(terminalDisplayProvider);
+    final settings = ref.read(settingsProvider);
+    final tmuxState = ref.read(tmuxProvider);
+
+    // 現在のウィンドウの全ペインを取���
+    final activeWindow = tmuxState.activeWindow;
+    final allPanes = activeWindow?.panes ?? [pane];
+
+    debugPrint('[ResizePane] pane=${pane.id} size=${pane.width}x${pane.height} '
+        'left=${pane.left} top=${pane.top} allPanes=${allPanes.length}');
+    debugPrint('[ResizePane] screenWidth=${displayState.screenWidth} '
+        'screenHeight=${displayState.screenHeight} '
+        'fontSize=${displayState.calculatedFontSize} '
+        'fontFamily=${settings.fontFamily}');
+
+    final result = await showDialog<ResizeResult>(
+      context: context,
+      builder: (context) => ResizePaneDialog(
+        targetPane: pane,
+        allPanesInWindow: allPanes,
+        currentCols: pane.width,
+        currentRows: pane.height,
+        screenWidth: displayState.screenWidth,
+        screenHeight: displayState.screenHeight,
+        fontSize: displayState.calculatedFontSize,
+        fontFamily: settings.fontFamily,
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    _isResizing = true;
+    _pollTimer?.cancel();
+    try {
+      final sshClient = ref.read(sshProvider.notifier).client;
+      if (sshClient == null) return;
+      await sshClient.exec(
+        TmuxCommands.resizePaneToSize(pane.id, cols: result.cols, rows: result.rows),
+      );
+      await _refreshSessionTree();
+      // 明示的にupdatePaneを呼んでフォント再計算
+      final activePane = ref.read(tmuxProvider).activePane;
+      if (activePane != null) {
+        ref.read(terminalDisplayProvider.notifier).updatePane(activePane);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Resize failed: $e')),
+        );
+      }
+    } finally {
+      _isResizing = false;
+      if (mounted && !_isDisposed) _startPolling();
+    }
+  }
+
+  /// ウィンドウをリサイズ
+  Future<void> _handleResizeWindow(TmuxWindow window) async {
+    if (_isResizing) return;
+
+    final displayState = ref.read(terminalDisplayProvider);
+    final settings = ref.read(settingsProvider);
+
+    // ウィンドウサイズはペインのwidth+leftの最大値で推定
+    final panes = window.panes;
+    int windowCols = 80;
+    int windowRows = 24;
+    if (panes.isNotEmpty) {
+      windowCols = panes.map((p) => p.left + p.width).reduce((a, b) => a > b ? a : b);
+      windowRows = panes.map((p) => p.top + p.height).reduce((a, b) => a > b ? a : b);
+    }
+
+    final result = await showDialog<ResizeResult>(
+      context: context,
+      builder: (context) => ResizeWindowDialog(
+        window: window,
+        panes: panes,
+        currentCols: windowCols,
+        currentRows: windowRows,
+        screenWidth: displayState.screenWidth,
+        screenHeight: displayState.screenHeight,
+        fontSize: displayState.calculatedFontSize,
+        fontFamily: settings.fontFamily,
+        supportsResizeWindow: _tmuxVersion?.supportsResizeWindow ?? false,
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    _isResizing = true;
+    _pollTimer?.cancel();
+    try {
+      final sshClient = ref.read(sshProvider.notifier).client;
+      if (sshClient == null) return;
+      final tmuxState = ref.read(tmuxProvider);
+      final target = '${tmuxState.activeSessionName}:${window.index}';
+      await sshClient.exec(
+        TmuxCommands.resizeWindow(target, cols: result.cols, rows: result.rows),
+      );
+      await _refreshSessionTree();
+      final activePane = ref.read(tmuxProvider).activePane;
+      if (activePane != null) {
+        ref.read(terminalDisplayProvider.notifier).updatePane(activePane);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Resize failed: $e')),
+        );
+      }
+    } finally {
+      _isResizing = false;
+      if (mounted && !_isDisposed) _startPolling();
+    }
+  }
+
   /// ペインを閉じる（SSH経由でkill-pane実行）
   Future<void> _killPane({
     required String paneId,
@@ -1856,6 +2049,17 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
                           color: colorScheme.onSurface,
                         ),
                       ),
+                      const Spacer(),
+                      IconButton(
+                        icon: Icon(Icons.open_in_full, color: colorScheme.primary),
+                        tooltip: 'Resize Pane',
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          Future.delayed(const Duration(milliseconds: 200), () {
+                            if (mounted) _showResizePaneChooser(tmuxState);
+                          });
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -1907,6 +2111,10 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
                                         0) ==
                                     1,
                           );
+                        },
+                        onResize: () {
+                          Navigator.pop(context);
+                          _handleResizePane(pane);
                         },
                         onClose: () {
                           Navigator.pop(context);
@@ -3475,6 +3683,418 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
           child: const Text('Create'),
         ),
       ],
+    );
+  }
+}
+
+// ====================================================================
+// _ResizePaneChooserDialog
+// ====================================================================
+
+/// リサイズ対象ペインをグラフィカルに選択するダイアログ
+class _ResizePaneChooserDialog extends StatefulWidget {
+  final List<TmuxPane> panes;
+  final String? activePaneId;
+  final void Function(TmuxPane selectedPane) onResize;
+
+  const _ResizePaneChooserDialog({
+    required this.panes,
+    this.activePaneId,
+    required this.onResize,
+  });
+
+  @override
+  State<_ResizePaneChooserDialog> createState() =>
+      _ResizePaneChooserDialogState();
+}
+
+class _ResizePaneChooserDialogState extends State<_ResizePaneChooserDialog> {
+  late String? _selectedPaneId;
+
+  @override
+  void initState() {
+    super.initState();
+    // デフォルト: 現在アクティブなペインが選択状態
+    _selectedPaneId = widget.activePaneId;
+  }
+
+  TmuxPane? get _selectedPane {
+    if (_selectedPaneId == null) return null;
+    try {
+      return widget.panes.firstWhere((p) => p.id == _selectedPaneId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = _selectedPane;
+
+    return AlertDialog(
+      backgroundColor: DesignColors.surfaceDark,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      title: const Text(
+        'Resize Pane',
+        style: TextStyle(color: DesignColors.textPrimary),
+      ),
+      content: SizedBox(
+        width: MediaQuery.of(context).size.width * 0.8,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ペインレイアウトのグリッドプレビュー
+            _buildSelectablePaneGrid(),
+            const SizedBox(height: 12),
+            // 選択中のペイン情報
+            if (selected != null)
+              Text(
+                'Selected: Pane ${selected.index} (${selected.width}x${selected.height})',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: DesignColors.textSecondary,
+                ),
+              )
+            else
+              const Text(
+                'Tap a pane to select',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: DesignColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: selected != null ? () => widget.onResize(selected) : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: DesignColors.primary,
+          ),
+          child: const Text('Resize'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSelectablePaneGrid() {
+    if (widget.panes.isEmpty) return const SizedBox.shrink();
+
+    // ウィンドウ全体のサイズを計算
+    int maxRight = 0;
+    int maxBottom = 0;
+    for (final pane in widget.panes) {
+      final right = pane.left + pane.width;
+      final bottom = pane.top + pane.height;
+      if (right > maxRight) maxRight = right;
+      if (bottom > maxBottom) maxBottom = bottom;
+    }
+    if (maxRight == 0) maxRight = 1;
+    if (maxBottom == 0) maxBottom = 1;
+
+    return Container(
+      height: 150,
+      clipBehavior: Clip.hardEdge,
+      decoration: BoxDecoration(
+        color: DesignColors.canvasDark,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: DesignColors.borderDark),
+      ),
+      child: LayoutBuilder(
+          builder: (context, constraints) {
+            const pad = 4.0;
+            final areaW = constraints.maxWidth - pad * 2;
+            final areaH = constraints.maxHeight - pad * 2;
+            final scaleX = areaW / maxRight;
+            final scaleY = areaH / maxBottom;
+
+            return Padding(
+              padding: const EdgeInsets.all(pad),
+              child: Stack(
+                children: [
+                  SizedBox(width: areaW, height: areaH),
+                  ...widget.panes.map((pane) {
+                  final isSelected = pane.id == _selectedPaneId;
+                  final left = pane.left * scaleX;
+                  final top = pane.top * scaleY;
+                  final width = (pane.width * scaleX).clamp(20.0, areaW - left);
+                  final height = (pane.height * scaleY).clamp(14.0, areaH - top);
+
+                  return Positioned(
+                    left: left,
+                    top: top,
+                    width: width,
+                    height: height,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedPaneId = pane.id),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? DesignColors.primary.withValues(alpha: 0.25)
+                              : DesignColors.surfaceDark,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: isSelected
+                                ? DesignColors.primary
+                                : DesignColors.borderDark,
+                            width: isSelected ? 2 : 1,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            child: Text(
+                              '${pane.index}\n${pane.width}x${pane.height}',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: isSelected
+                                    ? DesignColors.primary
+                                    : DesignColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ]),
+            );
+          },
+        ),
+      );
+  }
+}
+
+// ====================================================================
+// _ResizeWindowChooserDialog
+// ====================================================================
+
+/// リサイズ対象ウィンドウをグラフィカルに選択するダイアログ
+class _ResizeWindowChooserDialog extends StatefulWidget {
+  final List<TmuxWindow> windows;
+  final int? activeWindowIndex;
+  final void Function(TmuxWindow selectedWindow) onResize;
+
+  const _ResizeWindowChooserDialog({
+    required this.windows,
+    this.activeWindowIndex,
+    required this.onResize,
+  });
+
+  @override
+  State<_ResizeWindowChooserDialog> createState() =>
+      _ResizeWindowChooserDialogState();
+}
+
+class _ResizeWindowChooserDialogState
+    extends State<_ResizeWindowChooserDialog> {
+  late int? _selectedWindowIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    // デフォルト: 現在アクティブなウィンドウが選択状態
+    _selectedWindowIndex = widget.activeWindowIndex;
+  }
+
+  TmuxWindow? get _selectedWindow {
+    if (_selectedWindowIndex == null) return null;
+    try {
+      return widget.windows
+          .firstWhere((w) => w.index == _selectedWindowIndex);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = _selectedWindow;
+
+    return AlertDialog(
+      backgroundColor: DesignColors.surfaceDark,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      title: const Text(
+        'Resize Window',
+        style: TextStyle(color: DesignColors.textPrimary),
+      ),
+      content: SizedBox(
+        width: MediaQuery.of(context).size.width * 0.8,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ウィンドウカード一覧
+              ...widget.windows.map((window) {
+                final isSelected = window.index == _selectedWindowIndex;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _buildWindowCard(window, isSelected),
+                );
+              }),
+              const SizedBox(height: 4),
+              // 選択中のウィンドウ情報
+              if (selected != null) ...[
+                Text(
+                  'Selected: ${selected.name} (${_windowSizeString(selected)})',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: DesignColors.textSecondary,
+                  ),
+                ),
+              ] else
+                const Text(
+                  'Tap a window to select',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: DesignColors.textSecondary,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed:
+              selected != null ? () => widget.onResize(selected) : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: DesignColors.primary,
+          ),
+          child: const Text('Resize'),
+        ),
+      ],
+    );
+  }
+
+  String _windowSizeString(TmuxWindow window) {
+    final panes = window.panes;
+    if (panes.isEmpty) return '?x?';
+    final cols =
+        panes.map((p) => p.left + p.width).reduce((a, b) => a > b ? a : b);
+    final rows =
+        panes.map((p) => p.top + p.height).reduce((a, b) => a > b ? a : b);
+    return '${cols}x$rows';
+  }
+
+  Widget _buildWindowCard(TmuxWindow window, bool isSelected) {
+    final panes = window.panes;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedWindowIndex = window.index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        decoration: BoxDecoration(
+          color: DesignColors.canvasDark,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? DesignColors.primary : DesignColors.borderDark,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ウィンドウヘッダー
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? DesignColors.primary.withValues(alpha: 0.15)
+                    : DesignColors.surfaceDark,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(7),
+                  topRight: Radius.circular(7),
+                ),
+              ),
+              child: Text(
+                '${window.name}  ${_windowSizeString(window)}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isSelected
+                      ? DesignColors.primary
+                      : DesignColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            // ペインレイアウトプレビュー
+            if (panes.isNotEmpty)
+              SizedBox(
+                height: 60,
+                child: _buildPaneLayoutPreview(panes),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaneLayoutPreview(List<TmuxPane> panes) {
+    int maxRight = 0;
+    int maxBottom = 0;
+    for (final p in panes) {
+      final right = p.left + p.width;
+      final bottom = p.top + p.height;
+      if (right > maxRight) maxRight = right;
+      if (bottom > maxBottom) maxBottom = bottom;
+    }
+    if (maxRight == 0) maxRight = 1;
+    if (maxBottom == 0) maxBottom = 1;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final areaW = constraints.maxWidth - 8;
+        final areaH = constraints.maxHeight - 8;
+
+        return Padding(
+          padding: const EdgeInsets.all(4),
+          child: Stack(
+            children: [
+              SizedBox(width: areaW, height: areaH),
+              ...panes.map((pane) {
+              final left = (pane.left / maxRight) * areaW;
+              final top = (pane.top / maxBottom) * areaH;
+              final width = (pane.width / maxRight) * areaW;
+              final height = (pane.height / maxBottom) * areaH;
+
+              return Positioned(
+                left: left,
+                top: top,
+                width: width.clamp(16.0, areaW),
+                height: height.clamp(10.0, areaH),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(2),
+                    border: Border.all(
+                      color: DesignColors.borderDark,
+                      width: 1,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ]),
+        );
+      },
     );
   }
 }
