@@ -203,6 +203,23 @@ class TmuxCommands {
     return 'tmux resize-pane -t ${_escapeArg(paneId)} ${zoom ? '-Z' : '-z'}';
   }
 
+  /// ペインを指定サイズにリサイズする
+  /// cols/rowsはオプション（片方のみ指定可、tmuxは未指定の方を変更しない）
+  static String resizePaneToSize(String paneId, {int? cols, int? rows}) {
+    final args = <String>['-t', _escapeArg(paneId)];
+    if (cols != null) args.addAll(['-x', '$cols']);
+    if (rows != null) args.addAll(['-y', '$rows']);
+    return 'tmux resize-pane ${args.join(' ')}';
+  }
+
+  /// ウィンドウを指定サイズにリサイズする（tmux 2.9+必須）
+  static String resizeWindow(String target, {int? cols, int? rows}) {
+    final args = <String>['-t', _escapeArg(target)];
+    if (cols != null) args.addAll(['-x', '$cols']);
+    if (rows != null) args.addAll(['-y', '$rows']);
+    return 'tmux resize-window ${args.join(' ')}';
+  }
+
   // ===== 入力・キー送信 =====
 
   /// キーを送信
