@@ -17,6 +17,9 @@ class TerminalDisplayState {
   /// 利用可能なスクリーン幅（ピクセル）
   final double screenWidth;
 
+  /// 利用可能なスクリーン高さ（ピクセル）
+  final double screenHeight;
+
   /// 計算されたフォントサイズ
   final double calculatedFontSize;
 
@@ -36,6 +39,7 @@ class TerminalDisplayState {
     this.paneWidth = 80,
     this.paneHeight = 24,
     this.screenWidth = 0.0,
+    this.screenHeight = 0.0,
     this.calculatedFontSize = 14.0,
     this.needsHorizontalScroll = false,
     this.horizontalScrollOffset = 0.0,
@@ -55,6 +59,7 @@ class TerminalDisplayState {
     int? paneWidth,
     int? paneHeight,
     double? screenWidth,
+    double? screenHeight,
     double? calculatedFontSize,
     bool? needsHorizontalScroll,
     double? horizontalScrollOffset,
@@ -65,6 +70,7 @@ class TerminalDisplayState {
       paneWidth: paneWidth ?? this.paneWidth,
       paneHeight: paneHeight ?? this.paneHeight,
       screenWidth: screenWidth ?? this.screenWidth,
+      screenHeight: screenHeight ?? this.screenHeight,
       calculatedFontSize: calculatedFontSize ?? this.calculatedFontSize,
       needsHorizontalScroll: needsHorizontalScroll ?? this.needsHorizontalScroll,
       horizontalScrollOffset: horizontalScrollOffset ?? this.horizontalScrollOffset,
@@ -81,6 +87,7 @@ class TerminalDisplayState {
           paneWidth == other.paneWidth &&
           paneHeight == other.paneHeight &&
           screenWidth == other.screenWidth &&
+          screenHeight == other.screenHeight &&
           calculatedFontSize == other.calculatedFontSize &&
           needsHorizontalScroll == other.needsHorizontalScroll &&
           horizontalScrollOffset == other.horizontalScrollOffset &&
@@ -92,6 +99,7 @@ class TerminalDisplayState {
         paneWidth,
         paneHeight,
         screenWidth,
+        screenHeight,
         calculatedFontSize,
         needsHorizontalScroll,
         horizontalScrollOffset,
@@ -130,6 +138,15 @@ class TerminalDisplayNotifier extends Notifier<TerminalDisplayState> {
     if (state.screenWidth == width) return; // 変更なしなら何もしない
     state = state.copyWith(screenWidth: width);
     _recalculateFontSize();
+  }
+
+  /// スクリーンサイズを更新
+  ///
+  /// LayoutBuilder から幅と高さの両方を更新する。
+  void updateScreenSize(double width, double height) {
+    state = state.copyWith(screenWidth: width, screenHeight: height);
+    _recalculateFontSize();
+    _updateScrollRequirement();
   }
 
   /// 水平スクロール位置を更新

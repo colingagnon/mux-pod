@@ -113,6 +113,66 @@ void main() {
       });
     });
 
+    group('resizePaneToSize', () {
+      test('generates resize-pane with cols only', () {
+        expect(
+          TmuxCommands.resizePaneToSize('%0', cols: 120),
+          'tmux resize-pane -t %0 -x 120',
+        );
+      });
+
+      test('generates resize-pane with rows only', () {
+        expect(
+          TmuxCommands.resizePaneToSize('%0', rows: 40),
+          'tmux resize-pane -t %0 -y 40',
+        );
+      });
+
+      test('generates resize-pane with both cols and rows', () {
+        expect(
+          TmuxCommands.resizePaneToSize('%1', cols: 200, rows: 50),
+          'tmux resize-pane -t %1 -x 200 -y 50',
+        );
+      });
+
+      test('escapes pane ID with special characters', () {
+        expect(
+          TmuxCommands.resizePaneToSize('my pane', cols: 80),
+          'tmux resize-pane -t "my pane" -x 80',
+        );
+      });
+    });
+
+    group('resizeWindow', () {
+      test('generates resize-window with cols only', () {
+        expect(
+          TmuxCommands.resizeWindow('my-session:0', cols: 160),
+          'tmux resize-window -t my-session:0 -x 160',
+        );
+      });
+
+      test('generates resize-window with rows only', () {
+        expect(
+          TmuxCommands.resizeWindow('my-session:0', rows: 48),
+          'tmux resize-window -t my-session:0 -y 48',
+        );
+      });
+
+      test('generates resize-window with both cols and rows', () {
+        expect(
+          TmuxCommands.resizeWindow('@1', cols: 200, rows: 50),
+          'tmux resize-window -t @1 -x 200 -y 50',
+        );
+      });
+
+      test('escapes target with special characters', () {
+        expect(
+          TmuxCommands.resizeWindow('my session:0', cols: 80),
+          'tmux resize-window -t "my session:0" -x 80',
+        );
+      });
+    });
+
     group('sendKeys', () {
       test('generates literal send-keys command', () {
         // _escapeArg escapes backslashes, so \\ becomes \\\\
