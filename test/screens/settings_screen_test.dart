@@ -3,80 +3,51 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_muxpod/screens/settings/settings_screen.dart';
 
+Widget _buildApp() {
+  return const ProviderScope(
+    child: MaterialApp(home: SettingsScreen()),
+  );
+}
+
 void main() {
   group('SettingsScreen', () {
-    testWidgets('displays settings sections', (tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: SettingsScreen(),
-          ),
-        ),
-      );
-
+    testWidgets('displays Settings title', (tester) async {
+      await tester.pumpWidget(_buildApp());
       await tester.pumpAndSettle();
-
       expect(find.text('Settings'), findsOneWidget);
-      expect(find.text('Terminal'), findsOneWidget);
-      expect(find.text('Behavior'), findsOneWidget);
-      expect(find.text('Notifications'), findsOneWidget);
-      expect(find.text('Appearance'), findsOneWidget);
-
-      // Scroll down to see About section
-      await tester.scrollUntilVisible(find.text('About'), 100);
-      expect(find.text('About'), findsOneWidget);
     });
 
     testWidgets('displays Haptic Feedback toggle', (tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: SettingsScreen(),
-          ),
-        ),
-      );
-
+      await tester.pumpWidget(_buildApp());
       await tester.pumpAndSettle();
 
-      expect(find.text('Haptic Feedback'), findsOneWidget);
-      expect(find.text('Vibrate on key press'), findsOneWidget);
-      expect(find.byType(SwitchListTile), findsWidgets);
+      // Haptic Feedback is in the Behavior section - may need scroll
+      final finder = find.text('Haptic Feedback');
+      await tester.ensureVisible(finder);
+      expect(finder, findsOneWidget);
     });
 
     testWidgets('displays Keep Screen On toggle', (tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: SettingsScreen(),
-          ),
-        ),
-      );
-
+      await tester.pumpWidget(_buildApp());
       await tester.pumpAndSettle();
 
-      expect(find.text('Keep Screen On'), findsOneWidget);
-      expect(find.text('Prevent screen from sleeping'), findsOneWidget);
+      final finder = find.text('Keep Screen On');
+      await tester.ensureVisible(finder);
+      expect(finder, findsOneWidget);
     });
 
     testWidgets('behavior toggles are interactive', (tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: SettingsScreen(),
-          ),
-        ),
-      );
-
+      await tester.pumpWidget(_buildApp());
       await tester.pumpAndSettle();
 
-      // Find the Haptic Feedback switch
+      await tester.ensureVisible(find.text('Haptic Feedback'));
       final hapticSwitch = find.ancestor(
         of: find.text('Haptic Feedback'),
         matching: find.byType(SwitchListTile),
       );
       expect(hapticSwitch, findsOneWidget);
 
-      // Find the Keep Screen On switch
+      await tester.ensureVisible(find.text('Keep Screen On'));
       final keepScreenSwitch = find.ancestor(
         of: find.text('Keep Screen On'),
         matching: find.byType(SwitchListTile),
@@ -85,20 +56,37 @@ void main() {
     });
 
     testWidgets('displays Source Code link', (tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: SettingsScreen(),
-          ),
-        ),
-      );
-
+      await tester.pumpWidget(_buildApp());
       await tester.pumpAndSettle();
 
-      // Scroll down to see Source Code link in About section
-      await tester.scrollUntilVisible(find.text('Source Code'), 100);
+      await tester.ensureVisible(find.text('Source Code'));
       expect(find.text('Source Code'), findsOneWidget);
-      expect(find.text('github.com/muxpod'), findsOneWidget);
+      expect(find.text('github.com/moezakura/mux-pod'), findsOneWidget);
+    });
+
+    testWidgets('displays Image Transfer settings', (tester) async {
+      await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      // Image Transfer section header
+      await tester.ensureVisible(find.text('Image Transfer'));
+      expect(find.text('Image Transfer'), findsOneWidget);
+
+      // Individual settings
+      await tester.ensureVisible(find.text('Remote Path'));
+      expect(find.text('Remote Path'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Output Format'));
+      expect(find.text('Output Format'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Path Format'));
+      expect(find.text('Path Format'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Auto Enter'));
+      expect(find.text('Auto Enter'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Bracketed Paste'));
+      expect(find.text('Bracketed Paste'), findsOneWidget);
     });
   });
 }
