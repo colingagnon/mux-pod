@@ -81,9 +81,16 @@ class SshForegroundTaskService {
     required String host,
   }) async {
     if (!Platform.isAndroid) return true;
-    if (_isRunning) return true;
 
     await initialize();
+
+    // Probe actual Android state rather than trusting the Dart-side flag —
+    // the service may have survived a process restart.
+    if (await FlutterForegroundTask.isRunningService) {
+      _isRunning = true;
+      _currentConnectionName = connectionName;
+      return true;
+    }
 
     final hasPermission = await requestPermissions();
     if (!hasPermission) {
@@ -117,9 +124,14 @@ class SshForegroundTaskService {
 
   /// SSH切断時にForeground Serviceを停止
   Future<void> stopService() async {
-    if (!Platform.isAndroid || !_isRunning) return;
+    if (!Platform.isAndroid) return;
 
-    await FlutterForegroundTask.stopService();
+    // Don't trust _isRunning — the Dart process may have been killed and
+    // restarted while the Android foreground service kept running. Ask the
+    // plugin for the real state.
+    if (await FlutterForegroundTask.isRunningService) {
+      await FlutterForegroundTask.stopService();
+    }
     _isRunning = false;
     _currentConnectionName = null;
   }
