@@ -261,7 +261,7 @@ class TmuxParser {
 
       // フォーマット: session_name, session_id, window_index, window_id, window_name, window_active,
       //              pane_index, pane_id, pane_active, pane_width, pane_height, pane_left, pane_top,
-      //              pane_title, pane_current_command, cursor_x, cursor_y
+      //              pane_title, pane_current_command, cursor_x, cursor_y, window_flags, @muxpod_alert
       final sessionName = parts[0];
       final sessionId = parts[1];
       final windowIndex = int.tryParse(parts[2]) ?? 0;
@@ -286,7 +286,15 @@ class TmuxParser {
         () => TmuxSession(name: sessionName, id: sessionId),
       );
 
-      final windowFlags = parts.length > 17 ? _parseWindowFlags(parts[17]) : const <TmuxWindowFlag>{};
+      final rawFlags = parts.length > 17 ? _parseWindowFlags(parts[17]) : const <TmuxWindowFlag>{};
+
+      // @muxpod_alert が設定されていれば永続アラートとして bell フラグを合成する。
+      // tmuxの生のwindow_flagsは他クライアントがそのウィンドウをcurrentにしている
+      // と即座にクリアされてしまうため、ユーザーオプションを追加のシグナルとして扱う。
+      final muxpodAlert = parts.length > 18 ? parts[18] : '';
+      final windowFlags = muxpodAlert.isNotEmpty
+          ? {...rawFlags, TmuxWindowFlag.bell}
+          : rawFlags;
 
       // ウィンドウマップを取得または作成
       windowsMap.putIfAbsent(sessionName, () => {});

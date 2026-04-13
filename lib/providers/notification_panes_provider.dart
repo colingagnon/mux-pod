@@ -119,9 +119,16 @@ class AlertPanesNotifier extends Notifier<AlertPanesState> {
         options: options,
       );
 
-      // 当該ウィンドウを選択してフラグをクリアし、元のウィンドウに戻す
+      // 当該ウィンドウを選択してtmuxの生フラグ（!,#,~）をクリア
       await sshClient.exec(
         TmuxCommands.selectWindow(alert.sessionName, alert.windowIndex),
+      );
+
+      // 永続アラートマーカー（@muxpod_alert ユーザーオプション）もクリア
+      // tmuxの生フラグは他クライアントがcurrentにしているとすぐ消えるが、
+      // ユーザーオプションは明示的に消さない限り残る
+      await sshClient.exec(
+        TmuxCommands.clearMuxpodAlert(alert.sessionName, alert.windowIndex),
       );
 
       await sshClient.disconnect();
