@@ -247,22 +247,33 @@ class AlertPanesNotifier extends Notifier<AlertPanesState> {
         for (final session in sessions) {
           for (final window in session.windows) {
             final windowAlertFlags = window.flags.intersection(_alertFlags);
-            if (windowAlertFlags.isNotEmpty) {
-              for (final pane in window.panes) {
-                allAlertPanes.add(AlertPane(
-                  connectionId: connection.id,
-                  connectionName: connection.name,
-                  host: connection.host,
-                  sessionName: session.name,
-                  windowIndex: window.index,
-                  windowName: window.name,
-                  flags: windowAlertFlags,
-                  paneId: pane.id,
-                  paneIndex: pane.index,
-                  currentCommand: pane.currentCommand,
-                ));
-              }
-            }
+            if (windowAlertFlags.isEmpty) continue;
+            if (window.panes.isEmpty) continue;
+
+            // アラートはウィンドウ単位で1つだけ発行する。
+            // アクティブペインがあればそれを代表ペインとして使い、
+            // 無ければ最小インデックスのペインを使う。
+            // タップ時の遷移先・dismissロジックはwindowKeyで同期されるため、
+            // 1ウィンドウに複数ペインがあっても重複表示する必要はない。
+            final representative = window.panes.firstWhere(
+              (p) => p.active,
+              orElse: () => (window.panes.toList()
+                    ..sort((a, b) => a.index.compareTo(b.index)))
+                  .first,
+            );
+
+            allAlertPanes.add(AlertPane(
+              connectionId: connection.id,
+              connectionName: connection.name,
+              host: connection.host,
+              sessionName: session.name,
+              windowIndex: window.index,
+              windowName: window.name,
+              flags: windowAlertFlags,
+              paneId: representative.id,
+              paneIndex: representative.index,
+              currentCommand: representative.currentCommand,
+            ));
           }
         }
 
