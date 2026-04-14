@@ -27,6 +27,17 @@ class AppSettings {
   /// ペインナビゲーション方向の反転
   final bool invertPaneNavigation;
 
+  /// 永続アラート（@muxpod_alert ユーザーオプション）の有効化
+  ///
+  /// tmuxの生のwindow_flagsは他クライアントがそのウィンドウをcurrentに
+  /// していると即座にクリアされてしまう。これを回避するため、サーバー側の
+  /// `alert-bell` フックで `@muxpod_alert` ユーザーオプションを書き込み、
+  /// mux-pod側でそれをポーリング間の永続シグナルとして扱う。
+  /// 有効時: @muxpod_alert が設定されたウィンドウはアラート一覧に表示され、
+  ///        アラートをクリアする際にユーザーオプションも明示的に削除する。
+  /// 無効時: 従来通りtmuxの生フラグのみを見る。
+  final bool persistentAlertsEnabled;
+
   // --- キーオーバーレイ設定 ---
   /// キーオーバーレイ全体ON/OFF
   final bool showKeyOverlay;
@@ -71,6 +82,7 @@ class AppSettings {
     this.directInputEnabled = false,
     this.showTerminalCursor = true,
     this.invertPaneNavigation = false,
+    this.persistentAlertsEnabled = true,
     this.showKeyOverlay = true,
     this.keyOverlayModifier = true,
     this.keyOverlaySpecial = true,
@@ -105,6 +117,7 @@ class AppSettings {
     bool? directInputEnabled,
     bool? showTerminalCursor,
     bool? invertPaneNavigation,
+    bool? persistentAlertsEnabled,
     bool? showKeyOverlay,
     bool? keyOverlayModifier,
     bool? keyOverlaySpecial,
@@ -135,6 +148,7 @@ class AppSettings {
       directInputEnabled: directInputEnabled ?? this.directInputEnabled,
       showTerminalCursor: showTerminalCursor ?? this.showTerminalCursor,
       invertPaneNavigation: invertPaneNavigation ?? this.invertPaneNavigation,
+      persistentAlertsEnabled: persistentAlertsEnabled ?? this.persistentAlertsEnabled,
       showKeyOverlay: showKeyOverlay ?? this.showKeyOverlay,
       keyOverlayModifier: keyOverlayModifier ?? this.keyOverlayModifier,
       keyOverlaySpecial: keyOverlaySpecial ?? this.keyOverlaySpecial,
@@ -169,6 +183,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   static const String _directInputEnabledKey = 'settings_direct_input_enabled';
   static const String _showTerminalCursorKey = 'settings_show_terminal_cursor';
   static const String _invertPaneNavKey = 'settings_invert_pane_nav';
+  static const String _persistentAlertsEnabledKey = 'settings_persistent_alerts_enabled';
   static const String _imageRemotePathKey = 'settings_image_remote_path';
   static const String _imageOutputFormatKey = 'settings_image_output_format';
   static const String _imageJpegQualityKey = 'settings_image_jpeg_quality';
@@ -209,6 +224,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       directInputEnabled: prefs.getBool(_directInputEnabledKey) ?? false,
       showTerminalCursor: prefs.getBool(_showTerminalCursorKey) ?? true,
       invertPaneNavigation: prefs.getBool(_invertPaneNavKey) ?? false,
+      persistentAlertsEnabled: prefs.getBool(_persistentAlertsEnabledKey) ?? true,
       showKeyOverlay: prefs.getBool(_showKeyOverlayKey) ?? true,
       keyOverlayModifier: prefs.getBool(_keyOverlayModifierKey) ?? true,
       keyOverlaySpecial: prefs.getBool(_keyOverlaySpecialKey) ?? true,
@@ -321,6 +337,12 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setInvertPaneNavigation(bool value) async {
     state = state.copyWith(invertPaneNavigation: value);
     await _saveSetting(_invertPaneNavKey, value);
+  }
+
+  /// 永続アラート（@muxpod_alert ユーザーオプション）の有効/無効を設定
+  Future<void> setPersistentAlertsEnabled(bool value) async {
+    state = state.copyWith(persistentAlertsEnabled: value);
+    await _saveSetting(_persistentAlertsEnabledKey, value);
   }
 
   // --- キーオーバーレイ設定のsetter ---

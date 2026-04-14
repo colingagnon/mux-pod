@@ -212,6 +212,28 @@ class SettingsScreen extends ConsumerWidget {
                   },
                 ),
                 const Divider(),
+                const _SectionHeader(title: 'Alerts'),
+                SwitchListTile(
+                  secondary: const Icon(Icons.notifications_active),
+                  title: const Text('Persistent Alerts'),
+                  subtitle: const Text(
+                    'Keep bell/activity alerts visible even when an '
+                    'attached tmux client is focused on the window. '
+                    'Requires a server-side tmux hook — tap "Setup" below.',
+                  ),
+                  isThreeLine: true,
+                  value: settings.persistentAlertsEnabled,
+                  onChanged: (value) {
+                    ref.read(settingsProvider.notifier).setPersistentAlertsEnabled(value);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.help_outline),
+                  title: const Text('Persistent Alerts Setup'),
+                  subtitle: const Text('How to configure your tmux server'),
+                  onTap: () => _showPersistentAlertsHelp(context),
+                ),
+                const Divider(),
                 const _SectionHeader(title: 'Appearance'),
                 ListTile(
                   leading: const Icon(Icons.dark_mode),
@@ -475,6 +497,69 @@ class SettingsScreen extends ConsumerWidget {
                 Navigator.pop(ctx);
               },
             ),
+        ],
+      ),
+    );
+  }
+
+  void _showPersistentAlertsHelp(BuildContext context) {
+    const hookLine =
+        "set-hook -g alert-bell 'set-option -w @muxpod_alert \"#{T:%s}\"'";
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Persistent Alerts Setup'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'tmux clears bell/activity flags on a window as soon as '
+                'any attached client has that window focused. If you '
+                'keep a tmux client attached on your desktop, alerts '
+                'never reach mux-pod\'s polling.',
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Persistent Alerts fix this by writing a user option '
+                '(@muxpod_alert) from a tmux hook on every bell event. '
+                'The option survives focus changes, so mux-pod can '
+                'detect it on the next poll.',
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Add this line to ~/.tmux.conf on every server you use '
+                'with mux-pod, then reload with tmux source ~/.tmux.conf:',
+              ),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: SelectableText(
+                  hookLine,
+                  style: GoogleFonts.jetBrainsMono(fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'This also requires "monitor-bell on" and "bell-action any" '
+                'in your tmux config. You can add "alert-activity" and '
+                '"alert-silence" hooks with the same set-option command '
+                'if you want activity/silence monitoring as well.',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
         ],
       ),
     );

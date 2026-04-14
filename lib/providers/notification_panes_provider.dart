@@ -6,6 +6,7 @@ import '../services/ssh/ssh_client.dart';
 import '../services/tmux/tmux_commands.dart';
 import '../services/tmux/tmux_parser.dart';
 import 'connection_provider.dart';
+import 'settings_provider.dart';
 
 /// tmuxウィンドウフラグに基づく通知ペイン情報
 class AlertPane {
@@ -235,8 +236,13 @@ class AlertPanesNotifier extends Notifier<AlertPanesState> {
           options: options,
         );
 
+        final persistentAlertsEnabled =
+            ref.read(settingsProvider).persistentAlertsEnabled;
         final output = await sshClient.exec(TmuxCommands.listAllPanes());
-        final sessions = TmuxParser.parseFullTree(output);
+        final sessions = TmuxParser.parseFullTree(
+          output,
+          includeMuxpodAlerts: persistentAlertsEnabled,
+        );
 
         for (final session in sessions) {
           for (final window in session.windows) {

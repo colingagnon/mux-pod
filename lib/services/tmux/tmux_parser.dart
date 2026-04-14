@@ -242,7 +242,15 @@ class TmuxParser {
   /// セッションツリー全体をパース
   ///
   /// `tmux list-panes -a -F "..."`の出力から完全なツリーを構築
-  static List<TmuxSession> parseFullTree(String output, {String delimiter = defaultDelimiter}) {
+  ///
+  /// [includeMuxpodAlerts] が true（デフォルト）のとき、@muxpod_alert
+  /// ユーザーオプションが設定されたウィンドウにはbellフラグを合成する。
+  /// false のときは生のwindow_flagsだけを信用する。
+  static List<TmuxSession> parseFullTree(
+    String output, {
+    String delimiter = defaultDelimiter,
+    bool includeMuxpodAlerts = true,
+  }) {
     debugPrint('parseFullTree: raw output="${output.trim()}"');
     if (!isServerRunning(output)) {
       debugPrint('parseFullTree: isServerRunning=false, returning empty');
@@ -291,8 +299,9 @@ class TmuxParser {
       // @muxpod_alert が設定されていれば永続アラートとして bell フラグを合成する。
       // tmuxの生のwindow_flagsは他クライアントがそのウィンドウをcurrentにしている
       // と即座にクリアされてしまうため、ユーザーオプションを追加のシグナルとして扱う。
+      // [includeMuxpodAlerts] が false の場合はこの合成をスキップする。
       final muxpodAlert = parts.length > 18 ? parts[18] : '';
-      final windowFlags = muxpodAlert.isNotEmpty
+      final windowFlags = (includeMuxpodAlerts && muxpodAlert.isNotEmpty)
           ? {...rawFlags, TmuxWindowFlag.bell}
           : rawFlags;
 
