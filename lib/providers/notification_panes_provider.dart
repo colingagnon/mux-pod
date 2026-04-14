@@ -137,6 +137,75 @@ class AlertPanesNotifier extends Notifier<AlertPanesState> {
     }
   }
 
+  /// 現在のアラートをすべて一括クリアする
+  ///
+  /// 接続ごとにSSHセッションを1回だけ開き、その接続の全対象ウィンドウに対して
+  /// select-window と @muxpod_alert のクリアをまとめて実行する。
+  /// 個別クリアと同じ結果になるが、N回のハンドシェイクを避けて高速。
+  Future<void> clearAll() async {
+    final alerts = state.alertPanes;
+    if (alerts.isEmpty) return;
+
+    // まずローカル状態を即座にクリア（UIの反応を良くする）
+    state = state.copyWith(alertPanes: const []);
+
+    // 接続IDでグルーピング
+    final byConnection = <String, List<AlertPane>>{};
+    for (final alert in alerts) {
+      byConnection.putIfAbsent(alert.connectionId, () => []).add(alert);
+    }
+
+    final connectionsState = ref.read(connectionsProvider);
+    final storage = SecureStorageService();
+
+    for (final entry in byConnection.entries) {
+      final connection = connectionsState.connections
+          .where((c) => c.id == entry.key)
+          .firstOrNull;
+      if (connection == null) continue;
+
+      // 同じウィンドウに複数ペインのアラートがあっても1回だけクリアするため重複除去
+      final uniqueWindows = <String, AlertPane>{};
+      for (final alert in entry.value) {
+        uniqueWindows[alert.windowKey] = alert;
+      }
+
+      try {
+        SshConnectOptions options;
+        if (connection.authMethod == 'key' && connection.keyId != null) {
+          final privateKey = await storage.getPrivateKey(connection.keyId!);
+          final passphrase = await storage.getPassphrase(connection.keyId!);
+          options = SshConnectOptions(privateKey: privateKey, passphrase: passphrase, tmuxPath: connection.tmuxPath);
+        } else {
+          final password = await storage.getPassword(connection.id);
+          options = SshConnectOptions(password: password, tmuxPath: connection.tmuxPath);
+        }
+
+        final sshClient = SshClient();
+        await sshClient.connect(
+          host: connection.host,
+          port: connection.port,
+          username: connection.username,
+          options: options,
+        );
+
+        // 対象ウィンドウそれぞれに対して select-window と @muxpod_alert 解除を流す
+        for (final alert in uniqueWindows.values) {
+          await sshClient.exec(
+            TmuxCommands.selectWindow(alert.sessionName, alert.windowIndex),
+          );
+          await sshClient.exec(
+            TmuxCommands.clearMuxpodAlert(alert.sessionName, alert.windowIndex),
+          );
+        }
+
+        await sshClient.disconnect();
+      } catch (e) {
+        debugPrint('Failed to clear alerts for ${connection.name}: $e');
+      }
+    }
+  }
+
   /// 全接続からアラートペインを取得
   Future<void> refresh() async {
     state = state.copyWith(isLoading: true, error: null);
