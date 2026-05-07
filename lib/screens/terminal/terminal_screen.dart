@@ -654,7 +654,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
       // capture-pane + カーソル位置情報 + ペインモード を1回で取得
       // 出力形式: [ペイン内容]\n[カーソル情報]\n[ペインモード]
       final combinedCommand =
-          '${TmuxCommands.capturePane(target, escapeSequences: true, startLine: -1000)}; '
+          '${TmuxCommands.capturePane(target, escapeSequences: true)}; '
           '${TmuxCommands.getCursorPosition(target)}; '
           '${TmuxCommands.getPaneMode(target)}';
 
@@ -2451,6 +2451,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
                       _scrollModeSource = value ? ScrollModeSource.manual : ScrollModeSource.none;
                     });
                     if (newMode == TerminalMode.scroll) {
+                      _fetchScrollbackContent();
                       _enterTmuxCopyMode();
                     } else {
                       _cancelTmuxCopyMode();
@@ -2470,6 +2471,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
                     _scrollModeSource = isScrolling ? ScrollModeSource.none : ScrollModeSource.manual;
                   });
                   if (newMode == TerminalMode.scroll) {
+                    _fetchScrollbackContent();
                     _enterTmuxCopyMode();
                   } else {
                     _cancelTmuxCopyMode();
@@ -2931,6 +2933,27 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
     try {
       await sshClient.exec(TmuxCommands.cancelCopyMode(target));
       _boostPolling();
+    } catch (_) {}
+  }
+
+  /// スクロールモード開始時にスクロールバック履歴を一括取得してビューに反映
+  ///
+  /// 通常ポーリングは可視領域のみ取得するため、手動スクロールモード突入時に
+  /// 1000行分の履歴を一度だけ取得しておく。取得後はポーリング結果がバッファリング
+  /// されるため、スクロール中にビューが書き換わることはない。
+  Future<void> _fetchScrollbackContent() async {
+    final sshClient = ref.read(sshProvider.notifier).client;
+    if (sshClient == null || !sshClient.isConnected) return;
+    final target = ref.read(tmuxProvider.notifier).currentTarget;
+    if (target == null) return;
+    try {
+      final output = await sshClient.execPersistent(
+        TmuxCommands.capturePane(target, escapeSequences: true, startLine: -1000),
+        timeout: const Duration(seconds: 2),
+      );
+      if (!mounted || _isDisposed) return;
+      final processed = output.endsWith('\n') ? output.substring(0, output.length - 1) : output;
+      _viewNotifier.value = _viewNotifier.value.copyWith(content: processed);
     } catch (_) {}
   }
 
