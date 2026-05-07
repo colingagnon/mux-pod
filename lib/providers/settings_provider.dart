@@ -38,6 +38,13 @@ class AppSettings {
   /// 無効時: 従来通りtmuxの生フラグのみを見る。
   final bool persistentAlertsEnabled;
 
+  /// ターミナルポーリング速度プリセット
+  ///
+  /// 'fast'   : min=50ms,  max=1000ms  — リアルタイム監視向け
+  /// 'normal' : min=100ms, max=3000ms  — 標準（デフォルト）
+  /// 'eco'    : min=200ms, max=10000ms — バッテリー・通信量節約
+  final String pollingSpeed;
+
   // --- キーオーバーレイ設定 ---
   /// キーオーバーレイ全体ON/OFF
   final bool showKeyOverlay;
@@ -83,6 +90,7 @@ class AppSettings {
     this.showTerminalCursor = true,
     this.invertPaneNavigation = false,
     this.persistentAlertsEnabled = false,
+    this.pollingSpeed = 'normal',
     this.showKeyOverlay = true,
     this.keyOverlayModifier = true,
     this.keyOverlaySpecial = true,
@@ -118,6 +126,7 @@ class AppSettings {
     bool? showTerminalCursor,
     bool? invertPaneNavigation,
     bool? persistentAlertsEnabled,
+    String? pollingSpeed,
     bool? showKeyOverlay,
     bool? keyOverlayModifier,
     bool? keyOverlaySpecial,
@@ -149,6 +158,7 @@ class AppSettings {
       showTerminalCursor: showTerminalCursor ?? this.showTerminalCursor,
       invertPaneNavigation: invertPaneNavigation ?? this.invertPaneNavigation,
       persistentAlertsEnabled: persistentAlertsEnabled ?? this.persistentAlertsEnabled,
+      pollingSpeed: pollingSpeed ?? this.pollingSpeed,
       showKeyOverlay: showKeyOverlay ?? this.showKeyOverlay,
       keyOverlayModifier: keyOverlayModifier ?? this.keyOverlayModifier,
       keyOverlaySpecial: keyOverlaySpecial ?? this.keyOverlaySpecial,
@@ -184,6 +194,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   static const String _showTerminalCursorKey = 'settings_show_terminal_cursor';
   static const String _invertPaneNavKey = 'settings_invert_pane_nav';
   static const String _persistentAlertsEnabledKey = 'settings_persistent_alerts_enabled';
+  static const String _pollingSpeedKey = 'settings_polling_speed';
   static const String _imageRemotePathKey = 'settings_image_remote_path';
   static const String _imageOutputFormatKey = 'settings_image_output_format';
   static const String _imageJpegQualityKey = 'settings_image_jpeg_quality';
@@ -225,6 +236,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       showTerminalCursor: prefs.getBool(_showTerminalCursorKey) ?? true,
       invertPaneNavigation: prefs.getBool(_invertPaneNavKey) ?? false,
       persistentAlertsEnabled: prefs.getBool(_persistentAlertsEnabledKey) ?? false,
+      pollingSpeed: prefs.getString(_pollingSpeedKey) ?? 'normal',
       showKeyOverlay: prefs.getBool(_showKeyOverlayKey) ?? true,
       keyOverlayModifier: prefs.getBool(_keyOverlayModifierKey) ?? true,
       keyOverlaySpecial: prefs.getBool(_keyOverlaySpecialKey) ?? true,
@@ -343,6 +355,12 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setPersistentAlertsEnabled(bool value) async {
     state = state.copyWith(persistentAlertsEnabled: value);
     await _saveSetting(_persistentAlertsEnabledKey, value);
+  }
+
+  /// ポーリング速度プリセットを設定 ('fast' | 'normal' | 'eco')
+  Future<void> setPollingSpeed(String value) async {
+    state = state.copyWith(pollingSpeed: value);
+    await _saveSetting(_pollingSpeedKey, value);
   }
 
   // --- キーオーバーレイ設定のsetter ---

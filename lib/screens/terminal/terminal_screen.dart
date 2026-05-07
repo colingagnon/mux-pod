@@ -146,8 +146,8 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
 
   // 適応型ポーリング用
   int _currentPollingInterval = 100;
-  static const int _minPollingInterval = 50;
-  static const int _maxPollingInterval = 2000;
+  int _minPollingInterval = 100;
+  int _maxPollingInterval = 3000;
 
   // 選択状態保持用（スクロールモード中の更新抑制）
   String _bufferedContent = '';
@@ -316,12 +316,16 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
             _directInputEnabled = next.directInputEnabled;
           });
         }
+        if (previous?.pollingSpeed != next.pollingSpeed) {
+          _applyPollingSpeed(next.pollingSpeed);
+        }
       },
       fireImmediately: false,
     );
 
     // 初期値を明示的に設定
     _directInputEnabled = ref.read(settingsProvider).directInputEnabled;
+    _applyPollingSpeed(ref.read(settingsProvider).pollingSpeed);
 
     // ネットワーク状態の変化を監視（実際の接続状態変化時のみ更新）
     _networkSubscription = ref.listenManual<AsyncValue<NetworkStatus>>(
@@ -577,10 +581,23 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen>
 
   /// 適応型ポーリングでcapture-paneを実行してターミナル内容を更新
   ///
-  /// コンテンツの変化頻度に応じてポーリング間隔を動的に調整:
-  /// - 高頻度更新時（htop等）: 50ms
-  /// - 通常時: 100ms
-  /// - アイドル時: 500ms
+  /// pollingSpeed 設定値からmin/max間隔を適用
+  void _applyPollingSpeed(String speed) {
+    switch (speed) {
+      case 'fast':
+        _minPollingInterval = 50;
+        _maxPollingInterval = 1000;
+      case 'eco':
+        _minPollingInterval = 200;
+        _maxPollingInterval = 10000;
+      default: // 'normal'
+        _minPollingInterval = 100;
+        _maxPollingInterval = 3000;
+    }
+    _currentPollingInterval = _currentPollingInterval.clamp(_minPollingInterval, _maxPollingInterval);
+  }
+
+  /// コンテンツの変化頻度に応じてポーリング間隔を動的に調整
   void _startPolling() {
     _pollTimer?.cancel();
     _scheduleNextPoll();

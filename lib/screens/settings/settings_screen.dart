@@ -234,6 +234,35 @@ class SettingsScreen extends ConsumerWidget {
                   onTap: () => _showPersistentAlertsHelp(context),
                 ),
                 const Divider(),
+                const _SectionHeader(title: 'Performance'),
+                ListTile(
+                  leading: const Icon(Icons.speed),
+                  title: const Text('Polling Speed'),
+                  subtitle: Text(
+                    switch (settings.pollingSpeed) {
+                      'fast' => 'Fast — 50ms–1s (real-time monitoring)',
+                      'eco'  => 'Eco — 200ms–10s (saves battery & data)',
+                      _      => 'Normal — 100ms–3s (balanced)',
+                    },
+                  ),
+                  onTap: () async {
+                    final result = await showDialog<String>(
+                      context: context,
+                      builder: (context) => SimpleDialog(
+                        title: const Text('Polling Speed'),
+                        children: [
+                          _buildPositionOption(context, 'fast',   'Fast — 50ms–1s',    settings.pollingSpeed),
+                          _buildPositionOption(context, 'normal', 'Normal — 100ms–3s', settings.pollingSpeed),
+                          _buildPositionOption(context, 'eco',    'Eco — 200ms–10s',   settings.pollingSpeed),
+                        ],
+                      ),
+                    );
+                    if (result != null) {
+                      ref.read(settingsProvider.notifier).setPollingSpeed(result);
+                    }
+                  },
+                ),
+                const Divider(),
                 const _SectionHeader(title: 'Appearance'),
                 ListTile(
                   leading: const Icon(Icons.dark_mode),
