@@ -85,6 +85,37 @@ class _NotificationPanesScreenState extends ConsumerState<NotificationPanesScree
     notifier.clearWindowFlag(alert);
   }
 
+  Future<void> _clearAllAlerts() async {
+    final count = ref.read(alertPanesProvider).alertPanes.length;
+    if (count == 0) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear all alerts?'),
+        content: Text(
+          count == 1
+              ? 'Dismiss 1 alert and clear its tmux markers.'
+              : 'Dismiss $count alerts and clear their tmux markers.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: DesignColors.error),
+            child: const Text('Clear all'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    await ref.read(alertPanesProvider.notifier).clearAll();
+  }
+
   @override
   Widget build(BuildContext context) {
     final alertState = ref.watch(alertPanesProvider);
@@ -92,6 +123,15 @@ class _NotificationPanesScreenState extends ConsumerState<NotificationPanesScree
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      floatingActionButton: alertState.alertPanes.isEmpty
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _clearAllAlerts,
+              backgroundColor: DesignColors.error,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.clear_all),
+              label: const Text('Clear all'),
+            ),
       body: RefreshIndicator(
         onRefresh: _refresh,
         color: DesignColors.primary,

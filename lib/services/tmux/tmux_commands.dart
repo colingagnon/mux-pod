@@ -141,6 +141,12 @@ class TmuxCommands {
   /// 全ペインを取得するコマンド（セッションツリー構築用）
   ///
   /// 出力フォーマット: 完全なツリー情報（window_flags含む）
+  ///
+  /// 末尾の `#{@muxpod_alert}` は、`alert-bell` / `alert-activity` /
+  /// `alert-silence` フックから書き込まれる永続アラートマーカー。
+  /// tmuxのwindow_flagsは他のクライアントがそのウィンドウをcurrentに
+  /// している場合にすぐにクリアされてしまうため、ユーザーオプション
+  /// として保存することでmux-podのポーリング間にもアラートが残る。
   static String listAllPanes() {
     return 'tmux list-panes -a -F "'
         '#{session_name}$delimiter'
@@ -160,8 +166,17 @@ class TmuxCommands {
         '#{pane_current_command}$delimiter'
         '#{cursor_x}$delimiter'
         '#{cursor_y}$delimiter'
-        '#{window_flags}'
+        '#{window_flags}$delimiter'
+        '#{@muxpod_alert}'
         '"';
+  }
+
+  /// 永続アラートマーカー（@muxpod_alert ユーザーオプション）をクリア
+  ///
+  /// `alert-bell` などのフックがセットしたマーカーを削除する。
+  /// ユーザーがアラートをタップしたときに呼ばれる。
+  static String clearMuxpodAlert(String sessionName, int windowIndex) {
+    return 'tmux set-option -w -u -t ${_escapeArg(sessionName)}:$windowIndex @muxpod_alert';
   }
 
   /// ペインを選択
